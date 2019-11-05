@@ -3,6 +3,7 @@ GO              ?= go
 LDFLAGS         :=
 GOFLAGS         :=
 BINDIR          := $(CURDIR)/bin
+ANTCTL_BINDIR   := $(CURDIR)/antctl-bin
 GO_FILES        := $(shell find . -type d -name '.cache' -prune -o -type f -name '*.go' -print)
 GOPATH          ?= $$(go env GOPATH)
 DOCKER_CACHE    := $(CURDIR)/.cache
@@ -75,6 +76,15 @@ docker-tidy: $(DOCKER_CACHE)
 .linux-bin:
 	GOBIN=$(BINDIR) $(GO) install $(GOFLAGS) -ldflags '$(LDFLAGS)' github.com/vmware-tanzu/antrea/cmd/...
 
+# TODO: strip binary when building realses
+ANTCTL_BINARIES := antctl-darwin antctl-linux antctl-windows
+$(ANTCTL_BINARIES): antctl-%:
+	@GOOS=$* $(GO) build -o $(ANTCTL_BINDIR)/$@ $(GOFLAGS) -ldflags '$(LDFLAGS)' github.com/vmware-tanzu/antrea/cmd/antctl
+	@chmod 0755 $@
+
+.PHONY: antctl
+antctl: $(ANTCTL_BINARIES)
+
 .PHONY: .linux-test-unit
 .linux-test-unit:
 	@echo
@@ -111,13 +121,19 @@ fmt:
 
 .PHONY: lint
 lint:
-	golint $$(go list ./...)
+	golint $$($(GO) list ./...)
 
 .PHONY: clean
 clean:
 	@rm -rf $(BINDIR)
+	@rm -rf $(ANTCTL_BINDIR)
 	@rm -rf $(DOCKER_CACHE)
 	@rm -f .mockgen .protoc
+
+# Check if the antctl definitions are valid.
+.PHONY: cli-definitions
+cli-definitions:
+	@go generate ./pkg/antctl/definitions.go
 
 # Install a specific version of gomock to avoid generating different source code
 # for the mocks every time a new version of gomock is released. If a new version
