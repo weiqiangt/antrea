@@ -28,6 +28,7 @@ protoc --go_out=plugins=grpc:. pkg/apis/cni/v1beta1/cni.proto
 
 # Generate mocks for testing with mockgen.
 MOCKGEN_TARGETS=(
+  "pkg/monitor AgentQuerier,ControllerQuerier"
   "pkg/agent/cniserver/ipam IPAMDriver"
   "pkg/agent/openflow Client,FlowOperations"
   "pkg/ovs/openflow Bridge,Table,Flow,Action,FlowBuilder"
