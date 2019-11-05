@@ -143,6 +143,11 @@ rules:
   - subjectaccessreviews
   verbs:
   - create
+- nonResourceURLs:
+  - /apis/clusterinfo.antrea.tanzu.vmware.com/v1
+  - /apis/clusterinfo.antrea.tanzu.vmware.com/v1/*
+  verbs:
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -323,6 +328,22 @@ spec:
       - configMap:
           name: antrea-config-48gttf992h
         name: antrea-config
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  labels:
+    app: antrea
+  name: v1.clusterinfo.antrea.tanzu.vmware.com
+spec:
+  group: clusterinfo.antrea.tanzu.vmware.com
+  groupPriorityMinimum: 1000
+  insecureSkipTLSVerify: true
+  service:
+    name: antrea
+    namespace: kube-system
+  version: v1
+  versionPriority: 15
 ---
 apiVersion: apps/v1
 kind: DaemonSet
