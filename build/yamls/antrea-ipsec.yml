@@ -3,9 +3,9 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     app: antrea
-  name: antreaagentinfos.clusterinformation.crd.antrea.io
+  name: antreaagentinfos.clusterinformation.antrea.tanzu.vmware.com
 spec:
-  group: clusterinformation.crd.antrea.io
+  group: clusterinformation.antrea.tanzu.vmware.com
   names:
     kind: AntreaAgentInfo
     plural: antreaagentinfos
@@ -23,9 +23,9 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     app: antrea
-  name: antreacontrollerinfos.clusterinformation.crd.antrea.io
+  name: antreacontrollerinfos.clusterinformation.antrea.tanzu.vmware.com
 spec:
-  group: clusterinformation.crd.antrea.io
+  group: clusterinformation.antrea.tanzu.vmware.com
   names:
     kind: AntreaControllerInfo
     plural: antreacontrollerinfos
@@ -71,7 +71,7 @@ rules:
   - watch
   - list
 - apiGroups:
-  - clusterinformation.crd.antrea.io
+  - clusterinformation.antrea.tanzu.vmware.com
   resources:
   - antreaagentinfos
   verbs:
@@ -80,7 +80,7 @@ rules:
   - update
   - delete
 - apiGroups:
-  - networkpolicy.antrea.io
+  - networking.antrea.tanzu.vmware.com
   resources:
   - networkpolicies
   - appliedtogroups
@@ -116,7 +116,7 @@ rules:
   - watch
   - list
 - apiGroups:
-  - clusterinformation.crd.antrea.io
+  - clusterinformation.antrea.tanzu.vmware.com
   resources:
   - antreacontrollerinfos
   verbs:
@@ -185,6 +185,21 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: antrea-controller
+subjects:
+- kind: ServiceAccount
+  name: antrea-controller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: antrea
+  name: antrea-controller-antctl-remote
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: antctl
 subjects:
 - kind: ServiceAccount
   name: antrea-controller
@@ -335,6 +350,22 @@ spec:
       - configMap:
           name: antrea-config-k5f958t9km
         name: antrea-config
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  labels:
+    app: antrea
+  name: v1beta1.clusterinfo.antrea.tanzu.vmware.com
+spec:
+  group: clusterinfo.antrea.tanzu.vmware.com
+  groupPriorityMinimum: 1000
+  insecureSkipTLSVerify: true
+  service:
+    name: antrea
+    namespace: kube-system
+  version: v1beta1
+  versionPriority: 15
 ---
 apiVersion: apps/v1
 kind: DaemonSet
