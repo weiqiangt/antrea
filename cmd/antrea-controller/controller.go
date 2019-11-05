@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/klog"
 
+	"github.com/vmware-tanzu/antrea/pkg/antctl"
 	"github.com/vmware-tanzu/antrea/pkg/apiserver"
 	"github.com/vmware-tanzu/antrea/pkg/apiserver/storage"
 	"github.com/vmware-tanzu/antrea/pkg/controller/networkpolicy"
@@ -77,6 +78,11 @@ func run(o *Options) error {
 		return fmt.Errorf("error creating API server: %v", err)
 	}
 
+	antctlServerOpt, err := antctl.NewLocalServerOption()
+	if err != nil {
+		return fmt.Errorf("error creating local antctl server options: %w", err)
+	}
+
 	// set up signal capture: the first SIGTERM / SIGINT signal is handled gracefully and will
 	// cause the stopCh channel to be closed; if another signal is received before the program
 	// exits, we will force exit.
@@ -89,10 +95,17 @@ func run(o *Options) error {
 
 	go networkPolicyController.Run(stopCh)
 
-	go apiServer.GenericAPIServer.PrepareRun().Run(stopCh)
+	preparedAPIServer := apiServer.GenericAPIServer.PrepareRun()
+	antctl.CommandList.ApplyToMux(preparedAPIServer.GenericAPIServer.Handler.NonGoRestfulMux, nil, controllerMonitor)
+	go preparedAPIServer.Run(stopCh)
+
+	antctlStoppedCh := antctl.StartServer(antctlServerOpt, antctl.CommandList, nil, controllerMonitor, stopCh)
 
 	<-stopCh
+
 	klog.Info("Stopping Antrea controller")
+	<-antctlStoppedCh // check if the antctl server stopped
+
 	return nil
 }
 

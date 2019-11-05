@@ -28,6 +28,7 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/agent/controller/noderoute"
 	"github.com/vmware-tanzu/antrea/pkg/agent/interfacestore"
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
+	"github.com/vmware-tanzu/antrea/pkg/antctl"
 	"github.com/vmware-tanzu/antrea/pkg/apis/networking/v1beta1"
 	"github.com/vmware-tanzu/antrea/pkg/k8s"
 	"github.com/vmware-tanzu/antrea/pkg/monitor"
@@ -89,6 +90,11 @@ func run(o *Options) error {
 	}
 	nodeConfig := agentInitializer.GetNodeConfig()
 
+	antctlServerOpt, err := antctl.NewLocalServerOption()
+	if err != nil {
+		return fmt.Errorf("error create local antctl server options: %w", err)
+	}
+
 	nodeRouteController := noderoute.NewNodeRouteController(k8sClient,
 		informerFactory,
 		ofClient,
@@ -132,6 +138,8 @@ func run(o *Options) error {
 	agentMonitor := monitor.NewAgentMonitor(crdClient, o.config.OVSBridge, nodeConfig.Name, nodeConfig.PodCIDR.String(), ifaceStore, ofClient, ovsBridgeClient)
 
 	go agentMonitor.Run(stopCh)
+
+	antctl.StartServer(antctlServerOpt, antctl.CommandList, agentMonitor, nil, stopCh)
 
 	<-stopCh
 	klog.Info("Stopping Antrea agent")

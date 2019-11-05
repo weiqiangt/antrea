@@ -32,6 +32,7 @@ MOCKGEN_TARGETS=(
   "pkg/agent/openflow Client,FlowOperations"
   "pkg/ovs/openflow Bridge,Table,Flow,Action,FlowBuilder"
   "pkg/ovs/ovsconfig OVSBridgeClient"
+  "pkg/monitor AgentQuerier,ControllerQuerier"
 )
 
 for target in "${MOCKGEN_TARGETS[@]}"; do
