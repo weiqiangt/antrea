@@ -24,12 +24,11 @@ require (
 	github.com/google/gofuzz v1.0.0 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/googleapis/gnostic v0.3.1 // indirect
-	github.com/gorilla/context v1.1.1 // indirect
 	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/j-keck/arping v1.0.0
 	github.com/json-iterator/go v1.1.6 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd
-	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829 // indirect
+	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.3
 	github.com/streamrail/concurrent-map v0.0.0-20160823150647-8bf1e9bacbf6 // indirect
@@ -52,7 +51,9 @@ require (
 	k8s.io/utils v0.0.0-20190607212802-c55fbcfc754a // indirect
 )
 
-// Octant is renamed from vmware/octant to vmware-tanzu/octant since v0.9.0
-// However Octant v0.9.0 K8s API is not compatible with Antrea K8s API version
-// Will remove this and upgrade Octant version after finding another compatible Octant release
-replace github.com/vmware/octant => github.com/vmware-tanzu/octant v0.8.0
+// Octant is renamed from vmware/octant to vmware-tanzu/octant since v0.9.0.
+// However, Octant v0.9.0 K8s API is not compatible with Antrea K8s API version.
+// Furthermore, octant v0.8 and v0.9 do not check-in some generated code required for testing
+// (mocks), which breaks "go mod". This has been fixed in master.
+// Will remove this and upgrade Octant version after finding another compatible Octant release.
+replace github.com/vmware/octant => github.com/antoninbas/octant v0.8.1-0.20191116223915-811df1acc59f
