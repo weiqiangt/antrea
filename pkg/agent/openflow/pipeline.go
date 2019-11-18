@@ -19,7 +19,9 @@ import (
 	"net"
 	"sync"
 
+	"github.com/vmware-tanzu/antrea/pkg/agent/openflow/cookie"
 	binding "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
+	"github.com/vmware-tanzu/antrea/pkg/ovs/ovsconfig"
 )
 
 const (
@@ -108,6 +110,7 @@ type flowCategoryCache struct {
 }
 
 type client struct {
+	cookieAllocator                           cookie.Allocator
 	bridge                                    binding.Bridge
 	pipeline                                  map[binding.TableIDType]binding.Table
 	nodeFlowCache, podFlowCache, serviceCache *flowCategoryCache // cache for corresponding deletions
@@ -453,10 +456,11 @@ func (c *client) defaultDropFlow(tableID binding.TableIDType, matchKey int, matc
 }
 
 // NewClient is the constructor of the Client interface.
-func NewClient(bridgeName string) Client {
-	bridge := binding.NewBridge(bridgeName)
+func NewClient(bridgeClient ovsconfig.OVSBridgeClient) Client {
+	bridge := binding.NewBridge(bridgeClient.Name())
 	c := &client{
-		bridge: bridge,
+		bridge:          bridge,
+		cookieAllocator: cookie.NewAllocator(0), // TODO: read round number from ovsdb.
 		pipeline: map[binding.TableIDType]binding.Table{
 			classifierTable:       bridge.CreateTable(classifierTable, spoofGuardTable, binding.TableMissActionNext),
 			spoofGuardTable:       bridge.CreateTable(spoofGuardTable, conntrackTable, binding.TableMissActionDrop),
