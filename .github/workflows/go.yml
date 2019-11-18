@@ -21,6 +21,8 @@ jobs:
 
     - name: Run unit tests
       run: make test-unit
+    - name: Run coverage
+      run: bash <(curl -s https://codecov.io/bash)
 
 
   check-fmt:
