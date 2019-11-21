@@ -11,3 +11,5 @@ jobs:
     
     steps:
     - uses: TG908/fork-sync@v1.1
+    with:
+      github_token: ace3ec1c23e17c662e59073792ab82e4877c46f9
