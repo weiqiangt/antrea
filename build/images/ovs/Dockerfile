@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as ovs-debs
+FROM ubuntu:18.10 as ovs-debs
 
 ARG OVS_VERSION=2.11.1
 
@@ -16,7 +16,7 @@ RUN wget -q -O - https://www.openvswitch.org/releases/openvswitch-$OVS_VERSION.t
        openvswitch-ipsec_*.deb ovs-debs/
 
 
-FROM ubuntu:18.04
+FROM ubuntu:18.10
 
 LABEL maintainer="Antrea <projectantrea-dev@googlegroups.com>"
 LABEL description="A Docker image based on Ubuntu 18.04 which includes Open vSwitch built from source."
