@@ -48,4 +48,4 @@ require (
 // Furthermore, octant v0.8 and v0.9 do not check-in some generated code required for testing
 // (mocks), which breaks "go mod". This has been fixed in master.
 // Will remove this and upgrade Octant version after finding another compatible Octant release.
-replace github.com/vmware/octant => github.com/antoninbas/octant v0.8.1-0.20191116223915-811df1acc59f
+replace github.com/vmware/octant => github.com/antoninbas/octant v0.9.1
