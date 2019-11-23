@@ -15,12 +15,10 @@ require (
 	github.com/google/gofuzz v1.0.0 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/googleapis/gnostic v0.3.1 // indirect
-	github.com/gorilla/context v1.1.1 // indirect
 	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/j-keck/arping v1.0.0
 	github.com/json-iterator/go v1.1.6 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd
-	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829 // indirect
 	github.com/satori/go.uuid v1.2.0
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.3
@@ -39,7 +37,7 @@ require (
 	k8s.io/apiserver v0.0.0-20190620085212-47dc9a115b18
 	k8s.io/client-go v0.0.0-20190620085101-78d2af792bab
 	k8s.io/component-base v0.0.0-20190620085130-185d68e6e6ea
-	k8s.io/klog v0.3.3
+	k8s.io/klog v1.0.0
 	k8s.io/utils v0.0.0-20190607212802-c55fbcfc754a // indirect
 )
 
