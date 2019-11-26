@@ -16,10 +16,17 @@ package openflow
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
+	"strconv"
+	"time"
 
+	"k8s.io/klog"
+
+	"github.com/vmware-tanzu/antrea/pkg/agent/openflow/cookie"
 	"github.com/vmware-tanzu/antrea/pkg/agent/types"
 	binding "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
+	"github.com/vmware-tanzu/antrea/pkg/ovs/ovsconfig"
 )
 
 const maxRetryForOFSwitch = 5
@@ -30,7 +37,7 @@ const maxRetryForOFSwitch = 5
 // TODO: flow sync (e.g. at agent restart), retry at failure, garbage collection mechanisms
 type Client interface {
 	// Initialize sets up all basic flows on the specific OVS bridge.
-	Initialize() error
+	Initialize(brClient ovsconfig.OVSBridgeClient) error
 
 	// InstallGatewayFlows sets up flows related to an OVS gateway port, the gateway must exist.
 	InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.HardwareAddr, gatewayOFPort uint32) error
@@ -142,8 +149,8 @@ func (c *client) deleteFlows(cache *flowCategoryCache, flowCacheKey string) erro
 
 func (c *client) InstallNodeFlows(hostname string, localGatewayMAC net.HardwareAddr, peerGatewayIP net.IP, peerPodCIDR net.IPNet, tunnelPeerAddr net.IP) error {
 	flows := []binding.Flow{
-		c.arpResponderFlow(peerGatewayIP),
-		c.l3FwdFlowToRemote(localGatewayMAC, peerPodCIDR, tunnelPeerAddr),
+		c.arpResponderFlow(peerGatewayIP, cookie.Node),
+		c.l3FwdFlowToRemote(localGatewayMAC, peerPodCIDR, tunnelPeerAddr, cookie.Node),
 	}
 
 	return c.addMissingFlows(c.nodeFlowCache, hostname, flows)
@@ -155,11 +162,11 @@ func (c *client) UninstallNodeFlows(hostname string) error {
 
 func (c *client) InstallPodFlows(containerID string, podInterfaceIP net.IP, podInterfaceMAC, gatewayMAC net.HardwareAddr, ofPort uint32) error {
 	flows := []binding.Flow{
-		c.podClassifierFlow(ofPort),
-		c.podIPSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort),
-		c.arpSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort),
-		c.l2ForwardCalcFlow(podInterfaceMAC, ofPort),
-		c.l3FlowsToPod(gatewayMAC, podInterfaceIP, podInterfaceMAC),
+		c.podClassifierFlow(ofPort, cookie.Pod),
+		c.podIPSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort, cookie.Pod),
+		c.arpSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort, cookie.Pod),
+		c.l2ForwardCalcFlow(podInterfaceMAC, ofPort, cookie.Pod),
+		c.l3FlowsToPod(gatewayMAC, podInterfaceIP, podInterfaceMAC, cookie.Pod),
 	}
 
 	return c.addMissingFlows(c.podFlowCache, containerID, flows)
@@ -170,61 +177,100 @@ func (c *client) UninstallPodFlows(containerID string) error {
 }
 
 func (c *client) InstallClusterServiceCIDRFlows(serviceNet *net.IPNet, gatewayOFPort uint32) error {
-	return c.flowOperations.Add(c.serviceCIDRDNATFlow(serviceNet, gatewayOFPort))
+	return c.flowOperations.Add(c.serviceCIDRDNATFlow(serviceNet, gatewayOFPort, cookie.Service))
 }
 
 func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.HardwareAddr, gatewayOFPort uint32) error {
-	if err := c.flowOperations.Add(c.gatewayClassifierFlow(gatewayOFPort)); err != nil {
+	if err := c.flowOperations.Add(c.gatewayClassifierFlow(gatewayOFPort, cookie.Default)); err != nil {
 		return err
-	} else if err := c.flowOperations.Add(c.gatewayIPSpoofGuardFlow(gatewayOFPort)); err != nil {
+	} else if err := c.flowOperations.Add(c.gatewayIPSpoofGuardFlow(gatewayOFPort, cookie.Default)); err != nil {
 		return err
-	} else if err := c.flowOperations.Add(c.gatewayARPSpoofGuardFlow(gatewayOFPort)); err != nil {
+	} else if err := c.flowOperations.Add(c.gatewayARPSpoofGuardFlow(gatewayOFPort, cookie.Default)); err != nil {
 		return err
-	} else if err := c.flowOperations.Add(c.l3ToGatewayFlow(gatewayAddr, gatewayMAC)); err != nil {
+	} else if err := c.flowOperations.Add(c.l3ToGatewayFlow(gatewayAddr, gatewayMAC, cookie.Default)); err != nil {
 		return err
-	} else if err := c.flowOperations.Add(c.l2ForwardCalcFlow(gatewayMAC, gatewayOFPort)); err != nil {
+	} else if err := c.flowOperations.Add(c.l2ForwardCalcFlow(gatewayMAC, gatewayOFPort, cookie.Default)); err != nil {
 		return err
-	} else if err := c.flowOperations.Add(c.localProbeFlow(gatewayAddr)); err != nil {
+	} else if err := c.flowOperations.Add(c.localProbeFlow(gatewayAddr, cookie.Default)); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (c *client) InstallTunnelFlows(tunnelOFPort uint32) error {
-	if err := c.flowOperations.Add(c.tunnelClassifierFlow(tunnelOFPort)); err != nil {
+	if err := c.flowOperations.Add(c.tunnelClassifierFlow(tunnelOFPort, cookie.Default)); err != nil {
 		return err
-	} else if err := c.flowOperations.Add(c.l2ForwardCalcFlow(globalVirtualMAC, tunnelOFPort)); err != nil {
+	} else if err := c.flowOperations.Add(c.l2ForwardCalcFlow(globalVirtualMAC, tunnelOFPort, 0)); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *client) Initialize() error {
+func (c *client) Initialize(brClient ovsconfig.OVSBridgeClient) error {
 	// Initiate connections to target OFswitch, and create tables on the switch.
 	if err := c.bridge.Connect(maxRetryForOFSwitch, make(chan struct{})); err != nil {
 		return err
 	}
 
+	c.cookieAllocator = cookie.NewAllocator(roundNum(brClient))
 	for _, flow := range c.defaultFlows() {
 		if err := c.flowOperations.Add(flow); err != nil {
 			return fmt.Errorf("failed to install default flows: %v", err)
 		}
 	}
-	if err := c.flowOperations.Add(c.arpNormalFlow()); err != nil {
+	if err := c.flowOperations.Add(c.arpNormalFlow(cookie.Default)); err != nil {
 		return fmt.Errorf("failed to install arp normal flow: %v", err)
 	}
-	if err := c.flowOperations.Add(c.l2ForwardOutputFlow()); err != nil {
+	if err := c.flowOperations.Add(c.l2ForwardOutputFlow(cookie.Default)); err != nil {
 		return fmt.Errorf("failed to install l2 forward output flows: %v", err)
 	}
-	for _, flow := range c.connectionTrackFlows() {
+	for _, flow := range c.connectionTrackFlows(cookie.Default) {
 		if err := c.flowOperations.Add(flow); err != nil {
 			return fmt.Errorf("failed to install connection track flows: %v", err)
 		}
 	}
-	for _, flow := range c.establishedConnectionFlows() {
+	for _, flow := range c.establishedConnectionFlows(cookie.Default) {
 		if err := flow.Add(); err != nil {
 			return fmt.Errorf("failed to install flows to skip established connections: %v", err)
 		}
 	}
 	return nil
+}
+
+func roundNum(bridgeClient ovsconfig.OVSBridgeClient) uint64 {
+	var num uint64
+	rand.Seed(time.Now().UnixNano())
+	// read the round number
+	extIDs, ovsErr := bridgeClient.GetExternalIDs()
+	if ovsErr != nil {
+		klog.Warningf("Getting last round number failed: %s", ovsErr.Error())
+		num = rand.Uint64()
+	} else if roundNumValue, ok := extIDs[roundNumKey]; ok {
+		var err error
+		num, err = strconv.ParseUint(roundNumValue, 10, 64)
+		if err != nil {
+			klog.Warningf("Parsing last round number failed: %v", err)
+			num = rand.Uint64()
+		}
+		if num == (1<<cookie.BitwidthRound)-1 {
+			num = 0
+		} else {
+			num += 1
+		}
+	} else {
+		klog.Infoln("No round number found in OVSDB, using a random value")
+	}
+	num = rand.Uint64() % (1 << cookie.BitwidthRound)
+	klog.Infof("Using round number %d", num)
+	// write back
+	extIDs[roundNumKey] = fmt.Sprint(num)
+	updatedExtIDs := make(map[string]interface{})
+	for k, v := range extIDs {
+		extIDs[k] = v
+	}
+	if err := bridgeClient.SetExternalIDs(updatedExtIDs); err != nil {
+		klog.Errorf("Writing round number failed: %v", err)
+	}
+
+	return num
 }

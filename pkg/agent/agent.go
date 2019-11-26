@@ -216,7 +216,7 @@ func (i *Initializer) Initialize() error {
 // initOpenFlowPipeline sets up necessary Openflow entries, including pipeline, classifiers, conn_track, and gateway flows
 func (i *Initializer) initOpenFlowPipeline() error {
 	// Setup all basic flows.
-	if err := i.ofClient.Initialize(); err != nil {
+	if err := i.ofClient.Initialize(i.ovsBridgeClient); err != nil {
 		klog.Errorf("Failed to setup basic openflow entries: %v", err)
 		return err
 	}

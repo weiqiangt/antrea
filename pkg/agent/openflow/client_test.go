@@ -23,11 +23,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vmware-tanzu/antrea/pkg/agent/openflow/cookie"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	oftest "github.com/vmware-tanzu/antrea/pkg/agent/openflow/testing"
+	ovscfgtest "github.com/vmware-tanzu/antrea/pkg/ovs/ovsconfig/testing"
 )
 
 const bridgeName = "dummy-br"
@@ -75,6 +78,7 @@ func TestIdempotentFlowInstallation(t *testing.T) {
 			m := oftest.NewMockFlowOperations(ctrl)
 			ofClient := NewClient(bridgeName)
 			client := ofClient.(*client)
+			client.cookieAllocator = cookie.NewAllocator(0)
 			client.flowOperations = m
 
 			m.EXPECT().Add(gomock.Any()).Return(nil).Times(tc.numAddCalls)
@@ -107,9 +111,13 @@ func TestFlowInstallationPartialSuccess(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
+			brClient := ovscfgtest.NewMockOVSBridgeClient(ctrl)
+			brClient.EXPECT().GetExternalIDs().Return(map[string]string{roundNumKey: "0"}, nil).AnyTimes()
+			brClient.EXPECT().SetExternalIDs(gomock.Any()).Return(nil).AnyTimes()
 			m := oftest.NewMockFlowOperations(ctrl)
 			ofClient := NewClient(bridgeName)
 			client := ofClient.(*client)
+			client.cookieAllocator = cookie.NewAllocator(0)
 			client.flowOperations = m
 
 			// We generate an error for the last Add call.
@@ -148,6 +156,7 @@ func TestConcurrentFlowInstallation(t *testing.T) {
 			m := oftest.NewMockFlowOperations(ctrl)
 			ofClient := NewClient(bridgeName)
 			client := ofClient.(*client)
+			client.cookieAllocator = cookie.NewAllocator(0)
 			client.flowOperations = m
 
 			var concurrentCalls atomic.Value // set to true if we observe concurrent calls

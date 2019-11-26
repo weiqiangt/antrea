@@ -23,6 +23,7 @@ import (
 	gomock "github.com/golang/mock/gomock"
 	types "github.com/vmware-tanzu/antrea/pkg/agent/types"
 	openflow "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
+	ovsconfig "github.com/vmware-tanzu/antrea/pkg/ovs/ovsconfig"
 	net "net"
 	reflect "reflect"
 )
@@ -107,17 +108,17 @@ func (mr *MockClientMockRecorder) GetFlowTableStatus() *gomock.Call {
 }
 
 // Initialize mocks base method
-func (m *MockClient) Initialize() error {
+func (m *MockClient) Initialize(arg0 ovsconfig.OVSBridgeClient) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Initialize")
+	ret := m.ctrl.Call(m, "Initialize", arg0)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Initialize indicates an expected call of Initialize
-func (mr *MockClientMockRecorder) Initialize() *gomock.Call {
+func (mr *MockClientMockRecorder) Initialize(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Initialize", reflect.TypeOf((*MockClient)(nil).Initialize))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Initialize", reflect.TypeOf((*MockClient)(nil).Initialize), arg0)
 }
 
 // InstallClusterServiceCIDRFlows mocks base method

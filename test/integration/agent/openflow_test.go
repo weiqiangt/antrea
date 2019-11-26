@@ -28,13 +28,11 @@ import (
 
 	ofClient "github.com/vmware-tanzu/antrea/pkg/agent/openflow"
 	"github.com/vmware-tanzu/antrea/pkg/agent/types"
+	"github.com/vmware-tanzu/antrea/pkg/ovs/ovsconfig"
 	ofTestUtils "github.com/vmware-tanzu/antrea/test/integration/ovs"
 )
 
-var (
-	br = "br01"
-	c  ofClient.Client
-)
+var openflowTestBrName = "br01"
 
 const (
 	ingressRuleTable     = uint8(90)
@@ -77,13 +75,13 @@ type testConfig struct {
 }
 
 func TestConnectivityFlows(t *testing.T) {
-	c = ofClient.NewClient(br)
-	err := ofTestUtils.PrepareOVSBridge(br)
+	c := ofClient.NewClient(openflowTestBrName)
+	err := ofTestUtils.PrepareOVSBridge(openflowTestBrName)
 	if err != nil {
 		t.Errorf("Failed to prepare OVS bridge: %v", err)
 	}
 	defer func() {
-		err = ofTestUtils.DeleteOVSBridge(br)
+		err = ofTestUtils.DeleteOVSBridge(openflowTestBrName)
 		if err != nil {
 			t.Errorf("Error while deleting OVS bridge: %v", err)
 		}
@@ -92,7 +90,7 @@ func TestConnectivityFlows(t *testing.T) {
 	defer c.Disconnect()
 
 	config := prepareConfiguration()
-	for _, f := range []func(t *testing.T, config *testConfig){
+	for _, f := range []func(c ofClient.Client, t *testing.T, config *testConfig){
 		testInitialize,
 		testInstallGatewayFlows,
 		testInstallServiceFlows,
@@ -102,12 +100,16 @@ func TestConnectivityFlows(t *testing.T) {
 		testUninstallPodFlows,
 		testUninstallNodeFlows,
 	} {
-		f(t, config)
+		f(c, t, config)
 	}
 }
 
-func testInitialize(t *testing.T, config *testConfig) {
-	if err := c.Initialize(); err != nil {
+func testInitialize(c ofClient.Client, t *testing.T, config *testConfig) {
+	ovsdbConnection, err := ovsconfig.NewOVSDBConnectionUDS("")
+	assert.Nil(t, err, "Error when connecting OVSDB")
+	defer ovsdbConnection.Close()
+	ovsBridgeClient := ovsconfig.NewOVSBridge(openflowTestBrName, "netdev", ovsdbConnection)
+	if err := c.Initialize(ovsBridgeClient); err != nil {
 		t.Errorf("failed to initialize openflow client: %v", err)
 	}
 	for _, tableFlow := range prepareDefaultFlows() {
@@ -115,7 +117,7 @@ func testInitialize(t *testing.T, config *testConfig) {
 	}
 }
 
-func testInstallTunnelFlows(t *testing.T, config *testConfig) {
+func testInstallTunnelFlows(c ofClient.Client, t *testing.T, config *testConfig) {
 	err := c.InstallTunnelFlows(config.tunnelOFPort)
 	if err != nil {
 		t.Fatalf("Failed to install Openflow entries for tunnel port: %v", err)
@@ -125,7 +127,7 @@ func testInstallTunnelFlows(t *testing.T, config *testConfig) {
 	}
 }
 
-func testInstallServiceFlows(t *testing.T, config *testConfig) {
+func testInstallServiceFlows(c ofClient.Client, t *testing.T, config *testConfig) {
 	err := c.InstallClusterServiceCIDRFlows(config.serviceCIDR, config.localGateway.ofPort)
 	if err != nil {
 		t.Fatalf("Failed to install Openflow entries to skip service CIDR from egress table")
@@ -135,7 +137,7 @@ func testInstallServiceFlows(t *testing.T, config *testConfig) {
 	}
 }
 
-func testInstallNodeFlows(t *testing.T, config *testConfig) {
+func testInstallNodeFlows(c ofClient.Client, t *testing.T, config *testConfig) {
 	for _, node := range config.peers {
 		err := c.InstallNodeFlows("peer", config.localGateway.mac, node.gateway, node.subnet, node.nodeAddress)
 		if err != nil {
@@ -147,7 +149,7 @@ func testInstallNodeFlows(t *testing.T, config *testConfig) {
 	}
 }
 
-func testUninstallNodeFlows(t *testing.T, config *testConfig) {
+func testUninstallNodeFlows(c ofClient.Client, t *testing.T, config *testConfig) {
 	for _, node := range config.peers {
 		err := c.UninstallNodeFlows(node.name)
 		if err != nil {
@@ -159,7 +161,7 @@ func testUninstallNodeFlows(t *testing.T, config *testConfig) {
 	}
 }
 
-func testInstallPodFlows(t *testing.T, config *testConfig) {
+func testInstallPodFlows(c ofClient.Client, t *testing.T, config *testConfig) {
 	for _, pod := range config.localPods {
 		err := c.InstallPodFlows(pod.name, pod.ip, pod.mac, config.localGateway.mac, pod.ofPort)
 		if err != nil {
@@ -171,7 +173,7 @@ func testInstallPodFlows(t *testing.T, config *testConfig) {
 	}
 }
 
-func testUninstallPodFlows(t *testing.T, config *testConfig) {
+func testUninstallPodFlows(c ofClient.Client, t *testing.T, config *testConfig) {
 	for _, pod := range config.localPods {
 		err := c.UninstallPodFlows(pod.name)
 		if err != nil {
@@ -184,15 +186,18 @@ func testUninstallPodFlows(t *testing.T, config *testConfig) {
 }
 
 func TestNetworkPolicyFlows(t *testing.T) {
-	c = ofClient.NewClient(br)
-	err := ofTestUtils.PrepareOVSBridge(br)
-	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", br))
+	c := ofClient.NewClient(openflowTestBrName)
+	err := ofTestUtils.PrepareOVSBridge(openflowTestBrName)
+	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", openflowTestBrName))
 
 	defer func() {
-		err = ofTestUtils.DeleteOVSBridge(br)
+		err = ofTestUtils.DeleteOVSBridge(openflowTestBrName)
 	}()
-
-	err = c.Initialize()
+	ovsdbConnection, err := ovsconfig.NewOVSDBConnectionUDS("")
+	assert.Nil(t, err, "Error when connecting OVSDB")
+	defer ovsdbConnection.Close()
+	ovsBridgeClient := ovsconfig.NewOVSBridge(openflowTestBrName, "netdev", ovsdbConnection)
+	err = c.Initialize(ovsBridgeClient)
 	require.Nil(t, err, "Failed to initialize OFClient")
 
 	ruleID := uint32(100)
@@ -215,19 +220,19 @@ func TestNetworkPolicyFlows(t *testing.T) {
 
 	err = c.InstallPolicyRuleFlows(rule)
 	require.Nil(t, err, "Failed to InstallPolicyRuleFlows")
-	checkConjunctionFlows(t, ingressRuleTable, ingressDefaultTable, l2ForwardingOutTable, priorityNormal, rule, assert.True)
-	checkDefaultDropFlows(t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList, true)
+	checkConjunctionFlows(c, t, ingressRuleTable, ingressDefaultTable, l2ForwardingOutTable, priorityNormal, rule, assert.True)
+	checkDefaultDropFlows(c, t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList, true)
 
 	addedFrom := prepareIPNetAddresses([]string{"192.168.5.0/24", "192.169.1.0/24"})
-	checkAddAddress(t, ingressRuleTable, priorityNormal, ruleID, addedFrom, types.SrcAddress)
-	checkDeleteAddress(t, ingressRuleTable, priorityNormal, ruleID, addedFrom, types.SrcAddress)
+	checkAddAddress(c, t, ingressRuleTable, priorityNormal, ruleID, addedFrom, types.SrcAddress)
+	checkDeleteAddress(c, t, ingressRuleTable, priorityNormal, ruleID, addedFrom, types.SrcAddress)
 
 	ofport := int32(100)
 	err = c.AddPolicyRuleAddress(ruleID, types.DstAddress, []types.Address{ofClient.NewOFPortAddress(int32(100))})
 	require.Nil(t, err, "Failed to AddPolicyRuleService")
 
 	// Dump flows.
-	flowList, err := ofTestUtils.OfctlDumpFlows(br, ingressRuleTable)
+	flowList, err := ofTestUtils.OfctlDumpFlows(openflowTestBrName, ingressRuleTable)
 	require.Nil(t, err, "Failed to dump flows")
 	conjMatch := fmt.Sprintf("priority=%d,ip,reg1=0x%x", priorityNormal, ofport)
 	flow := &ofTestUtils.ExpectFlow{MatchStr: conjMatch, ActStr: fmt.Sprintf("conjunction(%d,2/3)", ruleID)}
@@ -250,7 +255,7 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	require.Nil(t, err, "Failed to InstallPolicyRuleFlows")
 
 	// Dump flows
-	flowList, err = ofTestUtils.OfctlDumpFlows(br, ingressRuleTable)
+	flowList, err = ofTestUtils.OfctlDumpFlows(openflowTestBrName, ingressRuleTable)
 	require.Nil(t, err, "Failed to dump flows")
 	conjMatch = fmt.Sprintf("priority=%d,ip,nw_dst=192.168.3.4", priorityNormal)
 	flow1 := &ofTestUtils.ExpectFlow{MatchStr: conjMatch, ActStr: fmt.Sprintf("conjunction(%d,2/3),conjunction(%d,1/2)", ruleID, ruleID2)}
@@ -260,17 +265,17 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	}
 	err = c.UninstallPolicyRuleFlows(ruleID2)
 	require.Nil(t, err, "Failed to InstallPolicyRuleFlows")
-	checkDefaultDropFlows(t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList2, true)
+	checkDefaultDropFlows(c, t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList2, true)
 
 	err = c.UninstallPolicyRuleFlows(ruleID)
 	require.Nil(t, err, "Failed to DeletePolicyRuleService")
-	checkConjunctionFlows(t, ingressRuleTable, ingressDefaultTable, l2ForwardingOutTable, priorityNormal, rule, assert.False)
-	checkDefaultDropFlows(t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList, false)
+	checkConjunctionFlows(c, t, ingressRuleTable, ingressDefaultTable, l2ForwardingOutTable, priorityNormal, rule, assert.False)
+	checkDefaultDropFlows(c, t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList, false)
 }
 
-func checkDefaultDropFlows(t *testing.T, table uint8, priority int, addrType types.AddressType, addresses []types.Address, add bool) {
+func checkDefaultDropFlows(c ofClient.Client, t *testing.T, table uint8, priority int, addrType types.AddressType, addresses []types.Address, add bool) {
 	// dump flows
-	flowList, err := ofTestUtils.OfctlDumpFlows(br, table)
+	flowList, err := ofTestUtils.OfctlDumpFlows(openflowTestBrName, table)
 	if err != nil {
 		t.Errorf("failed to dump flows")
 	}
@@ -304,12 +309,12 @@ func getCmdMatchKey(matchType int) string {
 	}
 }
 
-func checkAddAddress(t *testing.T, ruleTable uint8, priority int, ruleID uint32, addedAddress []types.Address, addrType types.AddressType) {
+func checkAddAddress(c ofClient.Client, t *testing.T, ruleTable uint8, priority int, ruleID uint32, addedAddress []types.Address, addrType types.AddressType) {
 	err := c.AddPolicyRuleAddress(ruleID, addrType, addedAddress)
 	require.Nil(t, err, "Failed to AddPolicyRuleAddress")
 
 	// dump flows
-	flowList, err := ofTestUtils.OfctlDumpFlows(br, ruleTable)
+	flowList, err := ofTestUtils.OfctlDumpFlows(openflowTestBrName, ruleTable)
 	require.Nil(t, err, "Failed to dump flows")
 
 	action := fmt.Sprintf("conjunction(%d,1/3)", ruleID)
@@ -332,10 +337,10 @@ func checkAddAddress(t *testing.T, ruleTable uint8, priority int, ruleID uint32,
 	}
 }
 
-func checkDeleteAddress(t *testing.T, ruleTable uint8, priority int, ruleID uint32, addedAddress []types.Address, addrType types.AddressType) {
+func checkDeleteAddress(c ofClient.Client, t *testing.T, ruleTable uint8, priority int, ruleID uint32, addedAddress []types.Address, addrType types.AddressType) {
 	err := c.DeletePolicyRuleAddress(ruleID, addrType, addedAddress)
 	require.Nil(t, err, "Failed to AddPolicyRuleAddress")
-	flowList, err := ofTestUtils.OfctlDumpFlows(br, ruleTable)
+	flowList, err := ofTestUtils.OfctlDumpFlows(openflowTestBrName, ruleTable)
 	require.Nil(t, err, "Failed to dump flows")
 
 	action := fmt.Sprintf("conjunction(%d,1/3)", ruleID)
@@ -358,9 +363,9 @@ func checkDeleteAddress(t *testing.T, ruleTable uint8, priority int, ruleID uint
 	}
 }
 
-func checkConjunctionFlows(t *testing.T, ruleTable uint8, dropTable uint8, allowTable uint8, priority int, rule *types.PolicyRule, testFunc func(t assert.TestingT, value bool, msgAndArgs ...interface{}) bool) {
+func checkConjunctionFlows(c ofClient.Client, t *testing.T, ruleTable uint8, dropTable uint8, allowTable uint8, priority int, rule *types.PolicyRule, testFunc func(t assert.TestingT, value bool, msgAndArgs ...interface{}) bool) {
 	ruleID := rule.ID
-	flowList, err := ofTestUtils.OfctlDumpFlows(br, ruleTable)
+	flowList, err := ofTestUtils.OfctlDumpFlows(openflowTestBrName, ruleTable)
 	require.Nil(t, err, "Failed to dump flows")
 
 	conjunctionActionMatch := fmt.Sprintf("priority=%d,conj_id=%d,ip", priority-10, rule.ID)
@@ -411,7 +416,7 @@ func checkConjunctionFlows(t *testing.T, ruleTable uint8, dropTable uint8, allow
 	}
 }
 
-func testInstallGatewayFlows(t *testing.T, config *testConfig) {
+func testInstallGatewayFlows(c ofClient.Client, t *testing.T, config *testConfig) {
 	err := c.InstallGatewayFlows(config.localGateway.ip, config.localGateway.mac, config.localGateway.ofPort)
 	if err != nil {
 		t.Fatalf("Failed to install Openflow entries for gateway: %v", err)
@@ -447,7 +452,7 @@ func prepareConfiguration() *testConfig {
 	}
 	vMAC, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
 	return &testConfig{
-		bridge:       br,
+		bridge:       openflowTestBrName,
 		localGateway: gwCfg,
 		localPods:    []*testLocalPodConfig{podCfg},
 		peers:        []*testPeerConfig{peerNode},
