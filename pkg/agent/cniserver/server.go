@@ -24,7 +24,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containernetworking/cni/pkg/types"
+	cnitypes "github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/types/current"
 	"github.com/containernetworking/cni/pkg/version"
 	"github.com/containernetworking/plugins/pkg/ip"
@@ -33,9 +33,10 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
-	"github.com/vmware-tanzu/antrea/pkg/agent"
 	"github.com/vmware-tanzu/antrea/pkg/agent/cniserver/ipam"
+	"github.com/vmware-tanzu/antrea/pkg/agent/interfacestore"
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
+	"github.com/vmware-tanzu/antrea/pkg/agent/types"
 	"github.com/vmware-tanzu/antrea/pkg/agent/util"
 	cnipb "github.com/vmware-tanzu/antrea/pkg/apis/cni/v1beta1"
 	"github.com/vmware-tanzu/antrea/pkg/cni"
@@ -89,14 +90,12 @@ type CNIServer struct {
 	cniSocket            string
 	supportedCNIVersions map[string]bool
 	serverVersion        string
-	nodeConfig           *agent.NodeConfig
-	ovsBridgeClient      ovsconfig.OVSBridgeClient
-	ifaceStore           agent.InterfaceStore
+	nodeConfig           *types.NodeConfig
 	hostProcPathPrefix   string
-	ofClient             openflow.Client
 	defaultMTU           int
 	kubeClient           clientset.Interface
 	containerAccess      *containerAccessArbitrator
+	podConfigurator      *podConfigurator
 }
 
 const (
@@ -110,11 +109,11 @@ type NetworkConfig struct {
 	Name       string          `json:"name,omitempty"`
 	Type       string          `json:"type,omitempty"`
 	MTU        int             `json:"mtu,omitempty"`
-	DNS        types.DNS       `json:"dns"`
+	DNS        cnitypes.DNS    `json:"dns"`
 	IPAM       ipam.IPAMConfig `json:"ipam,omitempty"`
 
 	RawPrevResult map[string]interface{} `json:"prevResult,omitempty"`
-	PrevResult    types.Result           `json:"-"`
+	PrevResult    cnitypes.Result        `json:"-"`
 }
 
 type CNIConfig struct {
@@ -149,11 +148,11 @@ func updateResultIfaceConfig(result *current.Result, defaultV4Gateway net.IP) {
 			}
 		}
 	} else {
-		result.Routes = []*types.Route{}
+		result.Routes = []*cnitypes.Route{}
 	}
 	if !foundDefaultRoute {
 		_, defaultRouteDstNet, _ := net.ParseCIDR(defaultRouteDst)
-		result.Routes = append(result.Routes, &types.Route{Dst: *defaultRouteDstNet, GW: defaultV4Gateway})
+		result.Routes = append(result.Routes, &cnitypes.Route{Dst: *defaultRouteDstNet, GW: defaultV4Gateway})
 	}
 }
 
@@ -164,7 +163,7 @@ func (s *CNIServer) loadNetworkConfig(request *cnipb.CniCmdRequest) (*CNIConfig,
 		return cniConfig, err
 	}
 	cniConfig.k8sArgs = &k8sArgs{}
-	if err := types.LoadArgs(request.CniArgs.Args, cniConfig.k8sArgs); err != nil {
+	if err := cnitypes.LoadArgs(request.CniArgs.Args, cniConfig.k8sArgs); err != nil {
 		return cniConfig, err
 	}
 	s.updateLocalIPAMSubnet(cniConfig)
@@ -203,7 +202,7 @@ func (s *CNIServer) checkRequestMessage(request *cnipb.CniCmdRequest) (*CNIConfi
 }
 
 func (s *CNIServer) updateLocalIPAMSubnet(cniConfig *CNIConfig) {
-	cniConfig.NetworkConfig.IPAM.Gateway = s.nodeConfig.Gateway.IP.String()
+	cniConfig.NetworkConfig.IPAM.Gateway = s.nodeConfig.GatewayConfig.IP.String()
 	cniConfig.NetworkConfig.IPAM.Subnet = s.nodeConfig.PodCIDR.String()
 	cniConfig.NetworkConfiguration, _ = json.Marshal(cniConfig.NetworkConfig)
 }
@@ -337,7 +336,13 @@ func (s *CNIServer) validatePrevResult(cfgArgs *cnipb.CniCmdArgs, k8sCNIArgs *k8
 		return s.invalidNetworkConfigResponse("prevResult does not match network configuration"), nil
 	}
 
-	if err := checkInterfaces(s.ifaceStore, containerID, netNS, containerIntf, hostIntf, hostVethName, prevResult); err != nil {
+	if err := s.podConfigurator.checkInterfaces(
+		containerID,
+		netNS,
+		hostVethName,
+		containerIntf,
+		hostIntf,
+		prevResult); err != nil {
 		return s.checkInterfaceFailureResponse(err), nil
 	}
 
@@ -381,15 +386,11 @@ func (s *CNIServer) CmdAdd(ctx context.Context, request *cnipb.CniCmdRequest) (
 	result.IPs = ipamResult.IPs
 	result.Routes = ipamResult.Routes
 	// Ensure interface gateway setting and mapping relations between result.Interfaces and result.IPs
-	updateResultIfaceConfig(result, s.nodeConfig.Gateway.IP)
+	updateResultIfaceConfig(result, s.nodeConfig.GatewayConfig.IP)
 	// Setup pod interfaces and connect to ovs bridge
 	podName := string(cniConfig.K8S_POD_NAME)
 	podNamespace := string(cniConfig.K8S_POD_NAMESPACE)
-	if err = configureInterface(
-		s.ovsBridgeClient,
-		s.ofClient,
-		s.nodeConfig.Gateway,
-		s.ifaceStore,
+	if err = s.podConfigurator.configureInterface(
 		podName,
 		podNamespace,
 		cniConfig.ContainerId,
@@ -433,7 +434,12 @@ func (s *CNIServer) CmdDel(ctx context.Context, request *cnipb.CniCmdRequest) (
 	podName := string(cniConfig.K8S_POD_NAME)
 	podNamespace := string(cniConfig.K8S_POD_NAMESPACE)
 	netNS := s.hostNetNsPath(cniConfig.Netns)
-	if err := removeInterfaces(s.ovsBridgeClient, s.ofClient, s.ifaceStore, podName, podNamespace, cniConfig.ContainerId, netNS, cniConfig.Ifname); err != nil {
+	if err := s.podConfigurator.removeInterfaces(
+		podName,
+		podNamespace,
+		cniConfig.ContainerId,
+		netNS,
+		cniConfig.Ifname); err != nil {
 		klog.Errorf("Failed to remove container %s interface configuration: %v", cniConfig.ContainerId, err)
 		return s.configInterfaceFailureResponse(err), nil
 	}
@@ -475,10 +481,11 @@ func (s *CNIServer) CmdCheck(ctx context.Context, request *cnipb.CniCmdRequest) 
 func New(
 	cniSocket, hostProcPathPrefix string,
 	defaultMTU int,
-	nodeConfig *agent.NodeConfig,
+	ovsDatapathType string,
+	nodeConfig *types.NodeConfig,
 	ovsBridgeClient ovsconfig.OVSBridgeClient,
 	ofClient openflow.Client,
-	ifaceStore agent.InterfaceStore,
+	ifaceStore interfacestore.InterfaceStore,
 	kubeClient clientset.Interface,
 ) *CNIServer {
 	return &CNIServer{
@@ -486,13 +493,11 @@ func New(
 		supportedCNIVersions: supportedCNIVersionSet,
 		serverVersion:        cni.AntreaCNIVersion,
 		nodeConfig:           nodeConfig,
-		ovsBridgeClient:      ovsBridgeClient,
-		ifaceStore:           ifaceStore,
 		hostProcPathPrefix:   hostProcPathPrefix,
-		ofClient:             ofClient,
 		defaultMTU:           defaultMTU,
 		kubeClient:           kubeClient,
 		containerAccess:      newContainerAccessArbitrator(),
+		podConfigurator:      newPodConfigurator(ovsBridgeClient, ofClient, ifaceStore, nodeConfig.GatewayConfig.MAC, ovsDatapathType),
 	}
 }
 
@@ -538,81 +543,7 @@ func (s *CNIServer) reconcile() error {
 		return fmt.Errorf("failed to list Pods running on Node %s: %v", s.nodeConfig.Name, err)
 	}
 
-	// desiredInterfaces is the exact set of interfaces that should be present, based on the
-	// current list of Pods.
-	desiredInterfaces := make(map[string]bool)
-	// knownInterfaces is the list of interfaces currently in the local cache.
-	knownInterfaces := s.ifaceStore.GetInterfaceIDs()
-
-	for _, pod := range pods.Items {
-		// Skip Pods for which we are not in charge of the networking.
-		if pod.Spec.HostNetwork {
-			continue
-		}
-
-		// We rely on the interface cache / store - which is initialized from the persistent
-		// OVSDB - to map the Pod to its interface configuration. The interface
-		// configuration includes the parameters we need to replay the flows.
-		containerConfig, found := s.ifaceStore.GetContainerInterface(pod.Name, pod.Namespace)
-		if !found {
-			// This should not happen since OVSDB is persisted on the Node.
-			// TODO: is there anything else we should be doing? Assuming that the Pod's
-			// interface still exists, we can repair the interface store since we can
-			// retrieve the name of the host interface for the Pod by calling
-			// GenerateContainerInterfaceName. One thing we would not be able to
-			// retrieve is the container ID which is part of the container configuration
-			// we store in the cache, but this ID is not used for anything at the
-			// moment. However, if the interface does not exist, there is nothing we can
-			// do since we do not have the original CNI parameters.
-			klog.Warningf("Interface for Pod %s/%s not found in the interface store", pod.Namespace, pod.Name)
-			continue
-		}
-		klog.V(4).Infof("Syncing interface %s for Pod %s/%s", containerConfig.IfaceName, pod.Namespace, pod.Name)
-		if err := s.ofClient.InstallPodFlows(
-			containerConfig.IfaceName,
-			containerConfig.IP,
-			containerConfig.MAC,
-			s.nodeConfig.Gateway.MAC,
-			uint32(containerConfig.OFPort),
-		); err != nil {
-			klog.Errorf("Error when re-installing flows for Pod %s/%s", pod.Namespace, pod.Name)
-			continue
-		}
-		desiredInterfaces[containerConfig.IfaceName] = true
-	}
-
-	for _, ifaceID := range knownInterfaces {
-		if _, found := desiredInterfaces[ifaceID]; found {
-			// this interface matches an existing Pod.
-			continue
-		}
-		// clean-up and delete interface
-		containerConfig, found := s.ifaceStore.GetInterface(ifaceID)
-		if !found {
-			// should not happen, nothing should have concurrent access to the interface
-			// store.
-			klog.Errorf("Interface %s can no longer be found in the interface store", ifaceID)
-			continue
-		}
-		if containerConfig.PodName == "" {
-			// not a container interface, skipping.
-			continue
-		}
-		klog.V(4).Infof("Deleting interface %s", ifaceID)
-		// ignore error, removeInterfaces already log them
-		_ = removeInterfaces(
-			s.ovsBridgeClient,
-			s.ofClient,
-			s.ifaceStore,
-			containerConfig.PodName,
-			containerConfig.PodNamespace,
-			containerConfig.ID,
-			"",
-			"",
-		)
-		// interface should no longer be in store after the call to removeInterfaces
-	}
-	return nil
+	return s.podConfigurator.reconcile(pods.Items)
 }
 
 func init() {

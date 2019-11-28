@@ -12,11 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package providers
+package types
 
-// Hides away specific characteristics of the K8s cluster. This should enable the same tests to be
-// run on a variety of providers.
-type ProviderInterface interface {
-	RunCommandOnNode(nodeName string, cmd string) (code int, stdout string, stderr string, err error)
-	GetKubeconfigPath() (string, error)
+import (
+	"net"
+)
+
+type GatewayConfig struct {
+	IP   net.IP
+	MAC  net.HardwareAddr
+	Name string
+}
+
+type NodeConfig struct {
+	Bridge  string
+	Name    string
+	PodCIDR *net.IPNet
+	*GatewayConfig
 }
