@@ -200,7 +200,8 @@ func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.Hardware
 func (c *client) InstallTunnelFlows(tunnelOFPort uint32) error {
 	if err := c.flowOperations.Add(c.tunnelClassifierFlow(tunnelOFPort, cookie.Default)); err != nil {
 		return err
-	} else if err := c.flowOperations.Add(c.l2ForwardCalcFlow(globalVirtualMAC, tunnelOFPort, 0)); err != nil {
+	}
+	if err := c.flowOperations.Add(c.l2ForwardCalcFlow(globalVirtualMAC, tunnelOFPort, 0)); err != nil {
 		return err
 	}
 	return nil
