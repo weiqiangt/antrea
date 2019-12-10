@@ -33,7 +33,7 @@ jobs:
     - name: Deploy Antrea
       # kubectl is installed on the Github Ubuntu 18.04 worker
       run: |
-        kind load docker-image antrea/antrea-ubuntu:latest
+        kind load docker-image tangweiqiang/antrea-ubuntu:latest
         ./hack/generate-manifest.sh --kind | kubectl apply -f -
     - name: Printing some debug information
       run: |

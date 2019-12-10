@@ -11,6 +11,18 @@ spec:
   selector:
     component: antrea-controller
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: antrea-metrics
+spec:
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 2112
+  selector:
+    component: antrea-controller
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,25 +42,22 @@ spec:
         component: antrea-controller
     spec:
       nodeSelector:
-        # Note: beta.kubernetes.io/os is targeted for removal in K8s v1.18, if running Antrea with 1.18
-        # or higher uncomment the following line and remove beta.kubernetes.io/os.
-        #kubernetes.io/os: linux
-        beta.kubernetes.io/os: linux
+        node-role.kubernetes.io/master: ""
       hostNetwork: true
       priorityClassName: system-cluster-critical
       tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
         # Mark it as a critical add-on.
         - key: CriticalAddonsOnly
           operator: Exists
-        # Allow it to schedule onto master nodes.
-        - key: node-role.kubernetes.io/master
-          effect: NoSchedule
       serviceAccountName: antrea-controller
       containers:
         - name: antrea-controller
           image: antrea
           command: ["antrea-controller"]
-          args: ["--config", "/etc/antrea/antrea-controller.conf"]
+          args: ["--config", "/etc/antrea/antrea-controller.conf", "--v", "10000"]
           env:
             # Provide pod and node information for clusterinformation CRD.
             - name: POD_NAME
@@ -65,6 +74,8 @@ spec:
                   fieldPath: spec.nodeName
           ports:
             - containerPort: 443
+              protocol: TCP
+            - containerPort: 2112
               protocol: TCP
           volumeMounts:
             - name: antrea-config

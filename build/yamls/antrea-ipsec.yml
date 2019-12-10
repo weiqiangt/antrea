@@ -3,9 +3,9 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     app: antrea
-  name: antreaagentinfos.clusterinformation.crd.antrea.io
+  name: antreaagentinfos.clusterinformation.antrea.tanzu.vmware.com
 spec:
-  group: clusterinformation.crd.antrea.io
+  group: clusterinformation.antrea.tanzu.vmware.com
   names:
     kind: AntreaAgentInfo
     plural: antreaagentinfos
@@ -23,9 +23,9 @@ kind: CustomResourceDefinition
 metadata:
   labels:
     app: antrea
-  name: antreacontrollerinfos.clusterinformation.crd.antrea.io
+  name: antreacontrollerinfos.clusterinformation.antrea.tanzu.vmware.com
 spec:
-  group: clusterinformation.crd.antrea.io
+  group: clusterinformation.antrea.tanzu.vmware.com
   names:
     kind: AntreaControllerInfo
     plural: antreacontrollerinfos
@@ -54,6 +54,14 @@ metadata:
   name: antrea-controller
   namespace: kube-system
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: antrea
+  name: prometheus
+  namespace: kube-system
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -71,7 +79,7 @@ rules:
   - watch
   - list
 - apiGroups:
-  - clusterinformation.crd.antrea.io
+  - clusterinformation.antrea.tanzu.vmware.com
   resources:
   - antreaagentinfos
   verbs:
@@ -80,7 +88,7 @@ rules:
   - update
   - delete
 - apiGroups:
-  - networkpolicy.antrea.io
+  - networking.antrea.tanzu.vmware.com
   resources:
   - networkpolicies
   - appliedtogroups
@@ -116,7 +124,7 @@ rules:
   - watch
   - list
 - apiGroups:
-  - clusterinformation.crd.antrea.io
+  - clusterinformation.antrea.tanzu.vmware.com
   resources:
   - antreacontrollerinfos
   verbs:
@@ -143,6 +151,37 @@ rules:
   - subjectaccessreviews
   verbs:
   - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app: antrea
+  name: prometheus
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - services
+  - endpoints
+  - pods
+  - nodes/proxy
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - nodes/metrics
+  verbs:
+  - get
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -188,6 +227,21 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: antrea-controller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: antrea
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
   namespace: kube-system
 ---
 apiVersion: v1
@@ -269,6 +323,22 @@ spec:
     app: antrea
     component: antrea-controller
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: antrea
+  name: antrea-metrics
+  namespace: kube-system
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 2112
+  selector:
+    app: antrea
+    component: antrea-controller
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -295,6 +365,8 @@ spec:
       - args:
         - --config
         - /etc/antrea/antrea-controller.conf
+        - --v
+        - "10000"
         command:
         - antrea-controller
         env:
@@ -316,6 +388,8 @@ spec:
         ports:
         - containerPort: 443
           protocol: TCP
+        - containerPort: 2112
+          protocol: TCP
         volumeMounts:
         - mountPath: /etc/antrea/antrea-controller.conf
           name: antrea-config
@@ -323,14 +397,15 @@ spec:
           subPath: antrea-controller.conf
       hostNetwork: true
       nodeSelector:
-        beta.kubernetes.io/os: linux
+        node-role.kubernetes.io/master: ""
       priorityClassName: system-cluster-critical
       serviceAccountName: antrea-controller
       tolerations:
-      - key: CriticalAddonsOnly
-        operator: Exists
       - effect: NoSchedule
         key: node-role.kubernetes.io/master
+        operator: Exists
+      - key: CriticalAddonsOnly
+        operator: Exists
       volumes:
       - configMap:
           name: antrea-config-k5f958t9km

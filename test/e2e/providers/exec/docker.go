@@ -16,7 +16,7 @@ package exec
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os/exec"
 	"strings"
 )
@@ -28,7 +28,7 @@ import (
 // the exit code of the command, along with the contents of stdout and stderr as strings. Note that
 // if the command returns a non-zero error code, this function does not report it as an error.
 func RunDockerExecCommand(container string, cmd string, workdir string) (
-	code int, stdout string, stderr string, err error,
+	code int, stdout io.Reader, stderr io.Reader, err error,
 ) {
 	args := make([]string, 0)
 	args = append(args, "exec", "-w", workdir, "-t", container)
@@ -36,26 +36,23 @@ func RunDockerExecCommand(container string, cmd string, workdir string) (
 	dockerCmd := exec.Command("docker", args...)
 	stdoutPipe, err := dockerCmd.StdoutPipe()
 	if err != nil {
-		return 0, "", "", fmt.Errorf("error when connecting to stdout: %v", err)
+		return 0, nil, nil, fmt.Errorf("error when connecting to stdout: %v", err)
 	}
 	stderrPipe, err := dockerCmd.StderrPipe()
 	if err != nil {
-		return 0, "", "", fmt.Errorf("error when connecting to stderr: %v", err)
+		return 0, nil, nil, fmt.Errorf("error when connecting to stderr: %v", err)
 	}
 	if err := dockerCmd.Start(); err != nil {
-		return 0, "", "", fmt.Errorf("error when starting command: %v", err)
+		return 0, nil, nil, fmt.Errorf("error when starting command: %v", err)
 	}
-
-	stdoutBytes, _ := ioutil.ReadAll(stdoutPipe)
-	stderrBytes, _ := ioutil.ReadAll(stderrPipe)
 
 	if err := dockerCmd.Wait(); err != nil {
 		if e, ok := err.(*exec.ExitError); ok {
-			return e.ExitCode(), string(stdoutBytes), string(stderrBytes), nil
+			return e.ExitCode(), stdoutPipe, stderrPipe, nil
 		}
-		return 0, "", "", err
+		return 0, nil, nil, err
 	}
 
 	// command is successful
-	return 0, string(stdoutBytes), string(stderrBytes), nil
+	return 0, stdoutPipe, stderrPipe, nil
 }

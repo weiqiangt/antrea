@@ -45,7 +45,7 @@ messages.
 Use the following Bash scripts to manage the Kubernetes nodes with Vagrant:
 
  * `./infra/vagrant/provision.sh`: create the required VMs and provision them
- * `./infra/vagrant/push_antrea.sh`: load the antrea/antrea-ubuntu Docker image
+ * `./infra/vagrant/push_antrea.sh`: load the tangweiqiang/antrea-ubuntu Docker image
    to each node, along with the Antrea deployment YAML
  * `./infra/vagrant/suspend.sh`: suspend all node VMs
  * `./infra/vagrant/resume.sh`: resume all node VMs

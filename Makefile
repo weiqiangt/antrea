@@ -1,4 +1,5 @@
 # go options
+SHELL			:= /bin/bash
 GO              ?= go
 LDFLAGS         :=
 GOFLAGS         :=
@@ -48,6 +49,8 @@ DOCKER_ENV := \
 	@docker run --rm -u $$(id -u):$$(id -g) \
 		-e "GOCACHE=/tmp/gocache" \
 		-e "GOPATH=/tmp/gopath" \
+		-e "GOPROXY='http://10.117.4.74:8888'" \
+		-e "GOSUMDB=off" \
 		-w /usr/src/github.com/vmware-tanzu/antrea \
 		-v $(DOCKER_CACHE)/gopath:/tmp/gopath \
 		-v $(DOCKER_CACHE)/gocache:/tmp/gocache \
@@ -144,16 +147,16 @@ codegen:
 
 .PHONY: ubuntu
 ubuntu:
-	@echo "===> Building antrea/antrea-ubuntu Docker image <==="
-	docker build -t antrea/antrea-ubuntu -f build/images/Dockerfile.ubuntu .
-	docker tag antrea/antrea-ubuntu antrea/antrea-ubuntu:$(DOCKER_IMG_VERSION)
+	@echo "===> Building tangweiqiang/antrea-ubuntu Docker image <==="
+	docker build -t tangweiqiang/antrea-ubuntu -f build/images/Dockerfile.ubuntu .
+	docker tag tangweiqiang/antrea-ubuntu tangweiqiang/antrea-ubuntu:$(DOCKER_IMG_VERSION)
 
 # Build bins in a golang container, and build the antrea-ubuntu Docker image.
 .PHONY: build-ubuntu
 build-ubuntu:
-	@echo "===> Building Antrea bins and antrea/antrea-ubuntu Docker image <==="
-	docker build -t antrea/antrea-ubuntu -f build/images/Dockerfile.build.ubuntu .
-	docker tag antrea/antrea-ubuntu antrea/antrea-ubuntu:$(DOCKER_IMG_VERSION)
+	@echo "===> Building Antrea bins and tangweiqiang/antrea-ubuntu Docker image <==="
+	docker build -t tangweiqiang/antrea-ubuntu -f build/images/Dockerfile.build.ubuntu .
+	docker tag tangweiqiang/antrea-ubuntu tangweiqiang/antrea-ubuntu:$(DOCKER_IMG_VERSION)
 
 .PHONY: manifest
 manifest:

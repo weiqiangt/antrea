@@ -18,6 +18,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path"
 
@@ -52,10 +53,10 @@ type RemoteProvider struct {
 	sshConfig *ssh_config.Config
 }
 
-func (p *RemoteProvider) RunCommandOnNode(nodeName string, cmd string) (code int, stdout string, stderr string, err error) {
+func (p *RemoteProvider) RunCommandOnNode(nodeName string, cmd string) (code int, stdout io.Reader, stderr io.Reader, err error) {
 	host, clientCfg, err := convertConfig(p.sshConfig, nodeName)
 	if err != nil {
-		return 0, "", "", err
+		return 0, nil, nil, err
 	}
 	return exec.RunSSHCommand(host, clientCfg, cmd)
 }

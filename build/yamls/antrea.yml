@@ -54,6 +54,14 @@ metadata:
   name: antrea-controller
   namespace: kube-system
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app: antrea
+  name: prometheus
+  namespace: kube-system
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -145,6 +153,37 @@ rules:
   - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app: antrea
+  name: prometheus
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - services
+  - endpoints
+  - pods
+  - nodes/proxy
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - nodes/metrics
+  verbs:
+  - get
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   labels:
@@ -188,6 +227,21 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: antrea-controller
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: antrea
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
   namespace: kube-system
 ---
 apiVersion: v1
@@ -260,6 +314,22 @@ spec:
     app: antrea
     component: antrea-controller
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: antrea
+  name: antrea-metrics
+  namespace: kube-system
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 2112
+  selector:
+    app: antrea
+    component: antrea-controller
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -286,6 +356,8 @@ spec:
       - args:
         - --config
         - /etc/antrea/antrea-controller.conf
+        - --v
+        - "10000"
         command:
         - antrea-controller
         env:
@@ -307,6 +379,8 @@ spec:
         ports:
         - containerPort: 443
           protocol: TCP
+        - containerPort: 2112
+          protocol: TCP
         volumeMounts:
         - mountPath: /etc/antrea/antrea-controller.conf
           name: antrea-config
@@ -314,14 +388,15 @@ spec:
           subPath: antrea-controller.conf
       hostNetwork: true
       nodeSelector:
-        beta.kubernetes.io/os: linux
+        node-role.kubernetes.io/master: ""
       priorityClassName: system-cluster-critical
       serviceAccountName: antrea-controller
       tolerations:
-      - key: CriticalAddonsOnly
-        operator: Exists
       - effect: NoSchedule
         key: node-role.kubernetes.io/master
+        operator: Exists
+      - key: CriticalAddonsOnly
+        operator: Exists
       volumes:
       - configMap:
           name: antrea-config-tm7bht9mg6

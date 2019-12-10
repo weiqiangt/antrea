@@ -19,8 +19,12 @@ package main
 
 import (
 	"flag"
+	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"k8s.io/component-base/logs"
 	"k8s.io/klog"
@@ -31,6 +35,15 @@ import (
 func main() {
 	logs.InitLogs()
 	defer logs.FlushLogs()
+
+	http.Handle("/metrics", promhttp.Handler())
+
+	go func() {
+		err := http.ListenAndServe("0.0.0.0:2112", nil)
+		if err != nil {
+			log.Fatalf("Error when starting metric and pprof server: %v", err)
+		}
+	}()
 
 	command := newControllerCommand()
 

@@ -30,14 +30,14 @@ kind create cluster --config kind-config.yml
 
 ### Deploy Antrea to your Kind cluster
 
-These instructions assume that you have built the `antrea/antrea-ubuntu` Docker
+These instructions assume that you have built the `tangweiqiang/antrea-ubuntu` Docker
 image locally (e.g. by running `make` from the root of the repository).
 
 ```bash
 # "fix" the host's veth interfaces (for the different Kind Nodes)
 kind get nodes | xargs ./hack/kind-linux.sh
 # load the Antrea Docker image in the Nodes
-kind load docker-image antrea/antrea-ubuntu:latest
+kind load docker-image tangweiqiang/antrea-ubuntu:latest
 # deploy Antrea
 ./hack/generate-manifest.sh --kind | kubectl apply -f -
 ```

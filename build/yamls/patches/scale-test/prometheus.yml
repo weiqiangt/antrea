@@ -1,0 +1,83 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: kube-system
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval:     1s
+      evaluation_interval: 5s
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ['antrea-metrics']
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: kube-system
+  labels:
+    app: prometheus
+spec:
+  selector:
+    app: prometheus
+  type: NodePort
+  ports:
+    - port: 9090
+      targetPort: 9090
+      nodePort: 31111
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: kube-system
+  labels:
+    app: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      containers:
+        - image: prom/prometheus
+          name: prometheus
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"
+            - "--storage.tsdb.retention=7d"
+            - "--web.enable-admin-api"
+            - "--web.listen-address=0.0.0.0:9090"
+            - "--web.enable-lifecycle"
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - mountPath: "/prometheus"
+              subPath: var/prometheus
+              name: data
+            - mountPath: "/etc/prometheus"
+              name: config
+      securityContext:
+        runAsUser: 0
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          hostPath:
+            path: /

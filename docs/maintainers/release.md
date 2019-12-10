@@ -9,7 +9,7 @@ release. We use `<TAG>` as a placeholder for the release tag (e.g. `v0.1.0`).
     2. a commit to update [VERSION](/VERSION) as needed.
 
  * Generate the deployment manifest for the release:
-   `IMG_NAME=antrea/antrea-ubuntu IMG_TAG=<TAG> ./hack/generate-manifest.sh --mode release > antrea.yml`
+   `IMG_NAME=tangweiqiang/antrea-ubuntu IMG_TAG=<TAG> ./hack/generate-manifest.sh --mode release > antrea.yml`
 
  * Make the release on Github with the release branch as the target: copy the
    relevant section of the [CHANGELOG](/CHANGELOG.md) for the release

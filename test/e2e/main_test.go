@@ -80,6 +80,7 @@ func testMain(m *testing.M) int {
 	}
 
 	rand.Seed(time.Now().UnixNano())
+	log.Println("Start running e2e test")
 	return m.Run()
 }
 

@@ -18,7 +18,7 @@ jobs:
       run: |
         make
         echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        docker push antrea/antrea-ubuntu:latest
+        docker push tangweiqiang/antrea-ubuntu:latest
   skip:
     if: github.repository != 'vmware-tanzu/antrea'
     runs-on: [ubuntu-18.04]

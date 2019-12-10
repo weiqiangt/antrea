@@ -26,6 +26,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	uuid "github.com/satori/go.uuid"
 	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -77,6 +79,55 @@ var (
 	denyAllIngressRule = networking.NetworkPolicyRule{Direction: networking.DirectionIn}
 	// denyAllEgressRule is a NetworkPolicyRule which denies all egress traffic.
 	denyAllEgressRule = networking.NetworkPolicyRule{Direction: networking.DirectionOut}
+
+	opsAppliedToGroupProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "applied_to_group_processed",
+		Help: "The total number of processed applied-to groups",
+	})
+	opsAddressGroupProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "address_group_processed",
+		Help: "The total number of processed address groups",
+	})
+	opsNetworkPolicyProcessed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "network_policy_processed",
+		Help: "The total number of processed network policies",
+	})
+	durationAppliedToGroupProcessing = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "applied_to_group_process_duration_milliseconds",
+		Help: "The duration of processing applied-to groups",
+	})
+	durationAddressGroupProcessing = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "address_group_process_duration_milliseconds",
+		Help: "The duration of processing address groups",
+	})
+	durationNetworkPolicyProcessing = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "network_policy_process_duration_milliseconds",
+		Help: "The duration of processing network policies",
+	})
+	durationAppliedToGroupSyncing = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "applied_to_group_sync_duration_milliseconds",
+		Help: "The duration of syncing applied-to groups",
+	})
+	durationAddressGroupSyncing = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "address_group_sync_duration_milliseconds",
+		Help: "The duration of syncing address groups",
+	})
+	durationNetworkPolicySyncing = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "network_policy_sync_duration_milliseconds",
+		Help: "The duration of syncing network policies",
+	})
+	LengthAppliedToGroupQueue = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "length_applied_to_group_queue",
+		Help: "The length of AppliedToGroupQueue",
+	})
+	LengthAddressGroupQueue = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "length_address_group_queue",
+		Help: "The length of AddressGroupQueue",
+	})
+	LengthNetworkPolicyQueue = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "length_network_policy_queue",
+		Help: "The length of NetworkPolicyQueue",
+	})
 )
 
 // NetworkPolicyController is responsible for synchronizing the Namespaces and Pods
@@ -810,6 +861,7 @@ func (n *NetworkPolicyController) deleteNamespace(old interface{}) {
 func (n *NetworkPolicyController) enqueueAppliedToGroup(key string) {
 	klog.V(4).Infof("Adding new key %s to AppliedToGroup queue", key)
 	n.appliedToGroupQueue.Add(key)
+	LengthAppliedToGroupQueue.Set(float64(n.appliedToGroupQueue.Len()))
 }
 
 // deleteDereferencedAddressGroups deletes the AddressGroup keys which are no
@@ -864,11 +916,13 @@ func (n *NetworkPolicyController) deleteDereferencedAppliedToGroup(key string) {
 func (n *NetworkPolicyController) enqueueAddressGroup(key string) {
 	klog.V(4).Infof("Adding new key %s to AddressGroup queue", key)
 	n.addressGroupQueue.Add(key)
+	LengthAddressGroupQueue.Set(float64(n.addressGroupQueue.Len()))
 }
 
 func (n *NetworkPolicyController) enqueueInternalNetworkPolicy(key string) {
 	klog.V(4).Infof("Adding new key %s to internal NetworkPolicy queue", key)
 	n.internalNetworkPolicyQueue.Add(key)
+	LengthNetworkPolicyQueue.Set(float64(n.internalNetworkPolicyQueue.Len()))
 }
 
 // Run begins watching and syncing of a NetworkPolicyController.
@@ -897,16 +951,22 @@ func (n *NetworkPolicyController) Run(stopCh <-chan struct{}) {
 
 func (n *NetworkPolicyController) appliedToGroupWorker() {
 	for n.processNextAppliedToGroupWorkItem() {
+		opsAppliedToGroupProcessed.Inc()
+		LengthAppliedToGroupQueue.Set(float64(n.appliedToGroupQueue.Len()))
 	}
 }
 
 func (n *NetworkPolicyController) addressGroupWorker() {
 	for n.processNextAddressGroupWorkItem() {
+		opsAddressGroupProcessed.Inc()
+		LengthAddressGroupQueue.Set(float64(n.addressGroupQueue.Len()))
 	}
 }
 
 func (n *NetworkPolicyController) internalNetworkPolicyWorker() {
 	for n.processNextInternalNetworkPolicyWorkItem() {
+		opsNetworkPolicyProcessed.Inc()
+		LengthNetworkPolicyQueue.Set(float64(n.internalNetworkPolicyQueue.Len()))
 	}
 }
 
@@ -919,6 +979,10 @@ func (n *NetworkPolicyController) internalNetworkPolicyWorker() {
 // return false if and only if the work queue was shutdown (no more items will
 // be processed).
 func (n *NetworkPolicyController) processNextInternalNetworkPolicyWorkItem() bool {
+	start := time.Now()
+	defer func() {
+		durationNetworkPolicyProcessing.Observe(float64(time.Since(start).Milliseconds()))
+	}()
 	key, quit := n.internalNetworkPolicyQueue.Get()
 	if quit {
 		return false
@@ -950,6 +1014,10 @@ func (n *NetworkPolicyController) processNextInternalNetworkPolicyWorkItem() boo
 // of a new change. This function return false if and only if the work queue
 // was shutdown (no more items will be processed).
 func (n *NetworkPolicyController) processNextAddressGroupWorkItem() bool {
+	start := time.Now()
+	defer func() {
+		durationAddressGroupProcessing.Observe(float64(time.Since(start).Milliseconds()))
+	}()
 	key, quit := n.addressGroupQueue.Get()
 	if quit {
 		return false
@@ -977,6 +1045,10 @@ func (n *NetworkPolicyController) processNextAddressGroupWorkItem() bool {
 // queue until we get notify of a new change. This function return false if
 // and only if the work queue was shutdown (no more items will be processed).
 func (n *NetworkPolicyController) processNextAppliedToGroupWorkItem() bool {
+	start := time.Now()
+	defer func() {
+		durationAppliedToGroupProcessing.Observe(float64(time.Since(start).Milliseconds()))
+	}()
 	key, quit := n.appliedToGroupQueue.Get()
 	if quit {
 		return false
@@ -1002,7 +1074,9 @@ func (n *NetworkPolicyController) processNextAppliedToGroupWorkItem() bool {
 func (n *NetworkPolicyController) syncAddressGroup(key string) error {
 	startTime := time.Now()
 	defer func() {
-		klog.V(2).Infof("Finished syncing AddressGroup %s. (%v)", key, time.Since(startTime))
+		d := time.Since(startTime)
+		durationAddressGroupSyncing.Observe(float64(d.Milliseconds()))
+		klog.V(2).Infof("Finished syncing AddressGroup %s. (%v)", key, d)
 	}()
 	// Get all internal NetworkPolicy objects that refers this AddressGroup.
 	nps, err := n.internalNetworkPolicyStore.GetByIndex(store.AddressGroupIndex, key)
@@ -1053,7 +1127,7 @@ func (n *NetworkPolicyController) syncAddressGroup(key string) error {
 	addresses := sets.String{}
 	for _, pod := range pods {
 		if pod.Status.PodIP == "" {
-			// No need to insert Pod IPAdddress when it is unset.
+			// No need to insert Pod IPAddress when it is unset.
 			continue
 		}
 		addresses.Insert(pod.Status.PodIP)
@@ -1078,7 +1152,9 @@ func (n *NetworkPolicyController) syncAddressGroup(key string) error {
 func (n *NetworkPolicyController) syncAppliedToGroup(key string) error {
 	startTime := time.Now()
 	defer func() {
-		klog.V(2).Infof("Finished syncing AppliedToGroup %s. (%v)", key, time.Since(startTime))
+		d := time.Since(startTime)
+		durationAppliedToGroupSyncing.Observe(float64(d.Milliseconds()))
+		klog.V(2).Infof("Finished syncing AppliedToGroup %s. (%v)", key, d)
 	}()
 	podsByNodes := make(map[string]antreatypes.PodSet)
 	var pods []*v1.Pod
@@ -1149,7 +1225,9 @@ func (n *NetworkPolicyController) syncAppliedToGroup(key string) error {
 func (n *NetworkPolicyController) syncInternalNetworkPolicy(key string) error {
 	startTime := time.Now()
 	defer func() {
-		klog.V(2).Infof("Finished syncing internal NetworkPolicy %s. (%v)", key, time.Since(startTime))
+		d := time.Since(startTime)
+		durationNetworkPolicySyncing.Observe(float64(d.Milliseconds()))
+		klog.V(2).Infof("Finished syncing internal NetworkPolicy %s. (%v)", key, d)
 	}()
 	klog.V(2).Infof("Syncing internal NetworkPolicy %s", key)
 	nodeNames := sets.String{}

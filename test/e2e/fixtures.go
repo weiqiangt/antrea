@@ -16,6 +16,7 @@ package e2e
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -108,11 +109,11 @@ func exportLogs(tb testing.TB, data *TestData) {
 
 	// runKubectl runs the provided kubectl command on the master Node and returns the
 	// output. It returns an empty string in case of error.
-	runKubectl := func(cmd string) string {
+	runKubectl := func(cmd string) io.Reader {
 		rc, stdout, _, err := RunCommandOnNode(masterNodeName(), cmd)
 		if err != nil || rc != 0 {
 			tb.Errorf("Error when running this kubectl command on master Node: %s", cmd)
-			return ""
+			return nil
 		}
 		return stdout
 	}
@@ -126,10 +127,10 @@ func exportLogs(tb testing.TB, data *TestData) {
 		defer w.Close()
 		cmd := fmt.Sprintf("kubectl -n %s logs --all-containers %s", antreaNamespace, podName)
 		stdout := runKubectl(cmd)
-		if stdout == "" {
+		if stdout == nil {
 			return nil
 		}
-		w.WriteString(stdout)
+		io.Copy(w, stdout)
 		return nil
 	})
 
@@ -142,10 +143,10 @@ func exportLogs(tb testing.TB, data *TestData) {
 		defer w.Close()
 		cmd := fmt.Sprintf("kubectl -n %s describe pod %s", antreaNamespace, podName)
 		stdout := runKubectl(cmd)
-		if stdout == "" {
+		if stdout == nil {
 			return nil
 		}
-		w.WriteString(stdout)
+		io.Copy(w, stdout)
 		return nil
 	})
 
@@ -166,7 +167,7 @@ func exportLogs(tb testing.TB, data *TestData) {
 			return nil
 		}
 		defer w.Close()
-		w.WriteString(stdout)
+		io.Copy(w, stdout)
 		return nil
 	}); err != nil {
 		tb.Logf("Error when exporting kubelet logs: %v", err)

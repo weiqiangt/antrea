@@ -17,13 +17,14 @@ package e2e
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"log"
 	"math/rand"
 	"net"
-	"regexp"
 	"strconv"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -131,7 +132,7 @@ func initProvider() error {
 }
 
 // RunCommandOnNode is a convenience wrapper around the Provider interface RunCommandOnNode method.
-func RunCommandOnNode(nodeName string, cmd string) (code int, stdout string, stderr string, err error) {
+func RunCommandOnNode(nodeName string, cmd string) (code int, stdout io.Reader, stderr io.Reader, err error) {
 	return provider.RunCommandOnNode(nodeName, cmd)
 }
 
@@ -142,6 +143,7 @@ func collectClusterInfo() error {
 		return err
 	}
 
+	log.Println("Collecting nodes information about K8s cluster")
 	// retrieve Node information
 	nodes, err := testData.clientset.CoreV1().Nodes().List(metav1.ListOptions{})
 	if err != nil {
@@ -176,23 +178,30 @@ func collectClusterInfo() error {
 	clusterInfo.numNodes = workerIdx
 	clusterInfo.numWorkerNodes = clusterInfo.numNodes - 1
 
-	// retrieve cluster CIDR
-	if err := func() error {
-		cmd := "kubectl cluster-info dump | grep cluster-cidr"
-		rc, stdout, _, err := RunCommandOnNode(clusterInfo.masterNodeName, cmd)
-		if err != nil || rc != 0 {
-			return fmt.Errorf("error when running the following command `%s` on master Node: %v, %s", cmd, err, stdout)
-		}
-		re := regexp.MustCompile(`cluster-cidr=([^"]+)`)
-		if matches := re.FindStringSubmatch(stdout); len(matches) == 0 {
-			return fmt.Errorf("cannot retrieve cluster CIDR, unexpected kubectl output: %s", stdout)
-		} else {
-			clusterInfo.podNetworkCIDR = matches[1]
-		}
-		return nil
-	}(); err != nil {
-		return err
-	}
+	log.Println("Collecting cluster CIDR of K8s cluster")
+	// // retrieve cluster CIDR
+	// if err := func() error {
+	// 	cmd := "kubectl cluster-info dump | grep cluster-cidr"
+	// 	rc, stdout, stderr, err := RunCommandOnNode(clusterInfo.masterNodeName, cmd)
+	// 	if err != nil || rc != 0 {
+	// 		return fmt.Errorf("error when running the following command `%s` on master Node: return code: %d, %v, stdout:\n%s, stderr:\n%s", cmd, rc, err, stdout, stderr)
+	// 	}
+	// 	stdoutBytes, err := ioutil.ReadAll(stdout)
+	// 	if err != nil {
+	// 		return fmt.Errorf("error when decoding stdout: %w", err)
+	// 	}
+	// 	re := regexp.MustCompile(`cluster-cidr=([^"]+)`)
+	// 	if matches := re.FindStringSubmatch(string(stdoutBytes)); len(matches) == 0 {
+	// 		return fmt.Errorf("cannot retrieve cluster CIDR, unexpected kubectl output: %s", stdout)
+	// 	} else {
+	// 		clusterInfo.podNetworkCIDR = matches[1]
+	// 	}
+	// 	return nil
+	// }(); err != nil {
+	// 	return err
+	// }
+
+	clusterInfo.podNetworkCIDR = "192.168.0.0/16"
 
 	return nil
 }

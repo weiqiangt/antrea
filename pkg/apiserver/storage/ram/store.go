@@ -221,8 +221,7 @@ func (s *store) Watch(ctx context.Context, key string, labelSelector labels.Sele
 	watcher := func() *storeWatcher {
 		s.watcherMutex.Lock()
 		defer s.watcherMutex.Unlock()
-
-		w := newStoreWatcher(10, &antreastorage.Selectors{key, labelSelector, fieldSelector}, forgetWatcher(s, s.watcherIdx))
+		w := newStoreWatcher(10000, &antreastorage.Selectors{key, labelSelector, fieldSelector}, forgetWatcher(s, s.watcherIdx))
 		s.watchers[s.watcherIdx] = w
 		s.watcherIdx++
 		return w

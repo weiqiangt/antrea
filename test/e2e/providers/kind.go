@@ -16,6 +16,7 @@ package providers
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path"
 
@@ -25,7 +26,7 @@ import (
 type KindProvider struct{}
 
 func (provider *KindProvider) RunCommandOnNode(nodeName string, cmd string) (
-	code int, stdout string, stderr string, err error,
+	code int, stdout io.Reader, stderr io.Reader, err error,
 ) {
 	return exec.RunDockerExecCommand(nodeName, cmd, "/root")
 }

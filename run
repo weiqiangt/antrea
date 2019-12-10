@@ -1,0 +1,15 @@
+#!/usr/local/bin/zsh
+
+set -eo
+
+echo "Rebuilding antrea testbed"
+kubectl delete -f /Users/weiqiangt/antrea/build/yamls/antrea.yml || true
+ssh root@prl "cd /media/psf/Home/antrea && GO=/usr/local/go/bin/go make bin"
+make manifest
+make ubuntu
+test/e2e/infra/vagrant/push_antrea.sh
+PROM_NODE_NAME=$(kubectl get pods -A -owide|grep prometheus|awk '{print $8}')
+PROM_NODE_ADDR=$(kubectl get nodes -owide "$PROM_NODE_NAME"|tail -n+2|awk '{print $6}')
+PROM_NODE_PORT=$(kubectl get services -A |grep prometheus|awk '{print $6}'|rg '\d+:(\d+)/\w+' -r '$1')
+echo "> prometheus: http://$PROM_NODE_ADDR:$PROM_NODE_PORT"
+go test github.com/vmware-tanzu/antrea/test/e2e -run=XXX -bench=BenchmarkScale -v --scale.cleanup=true --scale.setup=true --scale.policiesNum=50 --scale.testPods=25

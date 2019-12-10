@@ -16,6 +16,7 @@ package providers
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -114,11 +115,11 @@ func GetSSHConfig(name string) (string, *ssh.ClientConfig, error) {
 type VagrantProvider struct{}
 
 func (provider *VagrantProvider) RunCommandOnNode(nodeName string, cmd string) (
-	code int, stdout string, stderr string, err error,
+	code int, stdout io.Reader, stderr io.Reader, err error,
 ) {
 	host, config, err := GetSSHConfig(nodeName)
 	if err != nil {
-		return 0, "", "", fmt.Errorf("error when retrieving SSH config for node '%s': %v", nodeName, err)
+		return 0, nil, nil, fmt.Errorf("error when retrieving SSH config for node '%s': %v", nodeName, err)
 	}
 	return exec.RunSSHCommand(host, config, cmd)
 }

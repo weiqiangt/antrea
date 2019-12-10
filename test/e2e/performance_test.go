@@ -149,7 +149,7 @@ func setupTestPodsConnection(data *TestData) error {
 	return err
 }
 
-func generateWorkloadNetworkPolicy(policyRules int) *networkv1.NetworkPolicy {
+func generateWorkloadNetworkPolicy(policyRules int, labels map[string]string) *networkv1.NetworkPolicy {
 	ingressRules := make([]networkv1.NetworkPolicyPeer, policyRules)
 	rndSrc := rand.NewSource(seed)
 	existingCIDRs := make(map[string]struct{}) // ensure no duplicated cidrs
@@ -162,7 +162,7 @@ func generateWorkloadNetworkPolicy(policyRules int) *networkv1.NetworkPolicy {
 		ingressRules[i] = networkv1.NetworkPolicyPeer{IPBlock: &networkv1.IPBlock{CIDR: cidr}}
 	}
 	npSpec := networkv1.NetworkPolicySpec{
-		PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"app": performanceTestAppLabel}},
+		PodSelector: metav1.LabelSelector{MatchLabels: labels},
 		Ingress:     []networkv1.NetworkPolicyIngressRule{{From: ingressRules}},
 		PolicyTypes: []networkv1.PolicyType{networkv1.PolicyTypeIngress},
 	}
@@ -209,7 +209,7 @@ func setupTestPods(data *TestData, b *testing.B) (nginxPodIP, abPodIP string) {
 // httpRequest runs a benchmark to measure intra-Node Pod-to-Pod HTTP request performance. It creates one Apache-Bench
 // Pod and one Nginx Pod, both on the master Node. The Apache-Bench will generate requests number of requests to the Nginx
 // Pod. The number of concurrent requests will be determined by the value provided with the http.performance.concurrency
-// command-line flag (default is 1, for sequential requests). policyRules indicates how many CIDR rules should be
+// command-line flag (default is 1, for sequential requests). scaleTestPolicyRules indicates how many CIDR rules should be
 // included in the network policy applied to the Pods.
 func httpRequest(requests, policyRules int, data *TestData, b *testing.B) {
 	nginxPodIP, _ := setupTestPods(data, b)
@@ -220,7 +220,7 @@ func httpRequest(requests, policyRules int, data *TestData, b *testing.B) {
 	}
 
 	b.Log("Populating the workload network policy")
-	err = populateWorkloadNetworkPolicy(generateWorkloadNetworkPolicy(policyRules), data)
+	err = populateWorkloadNetworkPolicy(generateWorkloadNetworkPolicy(policyRules, map[string]string{"app": performanceTestAppLabel}), data)
 	if err != nil {
 		b.Fatalf("Error when populating workload network policy: %v", err)
 	}
@@ -244,14 +244,14 @@ func httpRequest(requests, policyRules int, data *TestData, b *testing.B) {
 	}
 }
 
-// networkPolicyRealize runs a benchmark to measure how long it takes for a Network Policy with policyRules CIDR rules
+// networkPolicyRealize runs a benchmark to measure how long it takes for a Network Policy with scaleTestPolicyRules CIDR rules
 // to be realized as OVS flows. In order to have entities for the Network Policy to be applied to, we create two dummy
 // Pods with the "antrea-performance-test" app label, but they do not generate any traffic.
 func networkPolicyRealize(policyRules int, data *TestData, b *testing.B) {
 	setupTestPods(data, b)
 	for i := 0; i < b.N; i++ {
 		go func() {
-			err := populateWorkloadNetworkPolicy(generateWorkloadNetworkPolicy(policyRules), data)
+			err := populateWorkloadNetworkPolicy(generateWorkloadNetworkPolicy(policyRules, map[string]string{"app": performanceTestAppLabel}), data)
 			if err != nil {
 				b.Fatalf("Error when populating workload network policy: %v", err)
 			}
