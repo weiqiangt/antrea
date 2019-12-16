@@ -80,6 +80,17 @@ type CompletedRule struct {
 	Pods          podSet
 }
 
+// String returns the string representation of the CompletedRule.
+func (r *CompletedRule) String() string {
+	var addressString string
+	if r.Direction == v1beta1.DirectionIn {
+		addressString = fmt.Sprintf("FromAddressGroups: %d, FromIPBlocks: %d, FromAddresses: %d", len(r.From.AddressGroups), len(r.From.IPBlocks), len(r.FromAddresses))
+	} else {
+		addressString = fmt.Sprintf("ToAddressGroups: %d, ToIPBlocks: %d, ToAddresses: %d", len(r.To.AddressGroups), len(r.To.IPBlocks), len(r.ToAddresses))
+	}
+	return fmt.Sprintf("%s (Direction: %v, Pods: %d, %s, Services: %d)", r.ID, r.Direction, len(r.Pods), addressString, len(r.Services))
+}
+
 // ruleCache caches Antrea AddressGroups, AppliedToGroups and NetworkPolicies,
 // can construct complete rules that can be used by reconciler to enforce.
 type ruleCache struct {
@@ -96,10 +107,6 @@ type ruleCache struct {
 	rules cache.Indexer
 	// dirtyRuleHandler is a callback that is run upon finding a rule out-of-sync.
 	dirtyRuleHandler func(string)
-
-	// defaultFromAddresses is a list of addresses which will be in the FromAddresses of
-	// all Ingress rules.
-	defaultFromAddresses []string
 }
 
 // ruleKeyFunc knows how to get key of a *rule.
@@ -133,17 +140,16 @@ func policyIndexFunc(obj interface{}) ([]string, error) {
 }
 
 // newRuleCache returns a new *ruleCache.
-func newRuleCache(dirtyRuleHandler func(string), defaultFromAddresses []string) *ruleCache {
+func newRuleCache(dirtyRuleHandler func(string)) *ruleCache {
 	rules := cache.NewIndexer(
 		ruleKeyFunc,
 		cache.Indexers{addressGroupIndex: addressGroupIndexFunc, appliedToGroupIndex: appliedToGroupIndexFunc, policyIndex: policyIndexFunc},
 	)
 	return &ruleCache{
-		podSetByGroup:        make(map[string]podSet),
-		addressSetByGroup:    make(map[string]sets.String),
-		rules:                rules,
-		dirtyRuleHandler:     dirtyRuleHandler,
-		defaultFromAddresses: defaultFromAddresses,
+		podSetByGroup:     make(map[string]podSet),
+		addressSetByGroup: make(map[string]sets.String),
+		rules:             rules,
+		dirtyRuleHandler:  dirtyRuleHandler,
 	}
 }
 
@@ -316,12 +322,6 @@ func (c *ruleCache) GetCompletedRule(ruleID string) (completedRule *CompletedRul
 	var fromAddresses, toAddresses sets.String
 	if r.Direction == v1beta1.DirectionIn {
 		fromAddresses, completed = c.unionAddressGroups(r.From.AddressGroups)
-
-		if completed {
-			for _, address := range c.defaultFromAddresses {
-				fromAddresses.Insert(address)
-			}
-		}
 	} else {
 		toAddresses, completed = c.unionAddressGroups(r.To.AddressGroups)
 	}

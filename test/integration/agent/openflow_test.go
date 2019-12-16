@@ -79,17 +79,13 @@ type testConfig struct {
 func TestConnectivityFlows(t *testing.T) {
 	c = ofClient.NewClient(br)
 	err := ofTestUtils.PrepareOVSBridge(br)
-	if err != nil {
-		t.Errorf("Failed to prepare OVS bridge: %v", err)
-	}
+	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 	defer func() {
+		err = c.Disconnect()
+		assert.Nil(t, err, fmt.Sprintf("Error while disconnect OVS bridge: %v", err))
 		err = ofTestUtils.DeleteOVSBridge(br)
-		if err != nil {
-			t.Errorf("Error while deleting OVS bridge: %v", err)
-		}
+		assert.Nil(t, err, fmt.Sprintf("Error while deleting OVS bridge: %v", err))
 	}()
-
-	defer c.Disconnect()
 
 	config := prepareConfiguration()
 	for _, f := range []func(t *testing.T, config *testConfig){
@@ -108,7 +104,7 @@ func TestConnectivityFlows(t *testing.T) {
 
 func testInitialize(t *testing.T, config *testConfig) {
 	if err := c.Initialize(); err != nil {
-		t.Errorf("failed to initialize openflow client: %v", err)
+		t.Errorf("Failed to initialize openflow client: %v", err)
 	}
 	for _, tableFlow := range prepareDefaultFlows() {
 		ofTestUtils.CheckFlowExists(t, config.bridge, tableFlow.tableID, true, tableFlow.flows)
@@ -188,12 +184,15 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", br))
 
-	defer func() {
-		err = ofTestUtils.DeleteOVSBridge(br)
-	}()
-
 	err = c.Initialize()
 	require.Nil(t, err, "Failed to initialize OFClient")
+
+	defer func() {
+		err = c.Disconnect()
+		assert.Nil(t, err, fmt.Sprintf("Error while disconnect OVS bridge: %v", err))
+		err = ofTestUtils.DeleteOVSBridge(br)
+		assert.Nil(t, err, fmt.Sprintf("Error while deleting OVS bridge: %v", err))
+	}()
 
 	ruleID := uint32(100)
 	fromList := []string{"192.168.1.3", "192.168.1.25", "192.168.2.4"}
@@ -271,9 +270,7 @@ func TestNetworkPolicyFlows(t *testing.T) {
 func checkDefaultDropFlows(t *testing.T, table uint8, priority int, addrType types.AddressType, addresses []types.Address, add bool) {
 	// dump flows
 	flowList, err := ofTestUtils.OfctlDumpFlows(br, table)
-	if err != nil {
-		t.Errorf("failed to dump flows")
-	}
+	assert.Nil(t, err, fmt.Sprintf("Failed to dump flows: %v", err))
 	for _, addr := range addresses {
 		conjMatch := fmt.Sprintf("priority=%d,ip,%s=%s", priority, getCmdMatchKey(addr.GetMatchKey(addrType)), addr.GetMatchValue())
 		flow := &ofTestUtils.ExpectFlow{MatchStr: conjMatch, ActStr: "drop"}
@@ -416,7 +413,7 @@ func testInstallGatewayFlows(t *testing.T, config *testConfig) {
 	if err != nil {
 		t.Fatalf("Failed to install Openflow entries for gateway: %v", err)
 	}
-	for _, tableFlow := range prepareGatewayFlows(config.localGateway.ip, config.localGateway.mac, config.localGateway.ofPort) {
+	for _, tableFlow := range prepareGatewayFlows(config.localGateway.ip, config.localGateway.mac, config.localGateway.ofPort, config.globalMAC) {
 		ofTestUtils.CheckFlowExists(t, config.bridge, tableFlow.tableID, true, tableFlow.flows)
 	}
 }
@@ -494,7 +491,7 @@ func preparePodFlows(podIP net.IP, podMAC net.HardwareAddr, podOFPort uint32, gw
 	}
 }
 
-func prepareGatewayFlows(gwIP net.IP, gwMAC net.HardwareAddr, gwOFPort uint32) []expectTableFlows {
+func prepareGatewayFlows(gwIP net.IP, gwMAC net.HardwareAddr, gwOFPort uint32, vMAC net.HardwareAddr) []expectTableFlows {
 	return []expectTableFlows{
 		{
 			uint8(0),
@@ -504,9 +501,16 @@ func prepareGatewayFlows(gwIP net.IP, gwMAC net.HardwareAddr, gwOFPort uint32) [
 			},
 		},
 		{
+			uint8(31),
+			[]*ofTestUtils.ExpectFlow{
+				{"priority=200,ct_state=-new+trk,ct_mark=0x20,ip",
+					fmt.Sprintf("load:0x%s->NXM_OF_ETH_DST[],resubmit(,40)", strings.Replace(gwMAC.String(), ":", "", -1))},
+			},
+		},
+		{
 			uint8(10),
 			[]*ofTestUtils.ExpectFlow{
-				{fmt.Sprintf("priority=200,arp,in_port=%d", gwOFPort), "resubmit(,20)"},
+				{fmt.Sprintf("priority=200,arp,in_port=%d,arp_spa=%s,arp_sha=%s", gwOFPort, gwIP, gwMAC), "resubmit(,20)"},
 				{fmt.Sprintf("priority=200,ip,in_port=%d", gwOFPort), "resubmit(,30)"},
 			},
 		},
@@ -514,7 +518,7 @@ func prepareGatewayFlows(gwIP net.IP, gwMAC net.HardwareAddr, gwOFPort uint32) [
 			uint8(70),
 			[]*ofTestUtils.ExpectFlow{
 				{
-					fmt.Sprintf("priority=200,ip,nw_dst=%s", gwIP.String()),
+					fmt.Sprintf("priority=200,ip,dl_dst=%s,nw_dst=%s", vMAC.String(), gwIP.String()),
 					fmt.Sprintf("set_field:%s->eth_dst,resubmit(,80)", gwMAC.String())},
 			},
 		},
@@ -615,9 +619,8 @@ func prepareDefaultFlows() []expectTableFlows {
 			uint8(31),
 			[]*ofTestUtils.ExpectFlow{
 				{"priority=210,ct_state=-new+trk,ct_mark=0x20,ip,reg0=0x1/0xffff", "resubmit(,40)"},
-				{"priority=200,ct_state=+new+trk,ip,reg0=0x1/0xffff", "ct(commit,table=40,zone=65520,exec(load:0x20->NXM_NX_CT_MARK[],move:NXM_OF_ETH_SRC[]->NXM_NX_CT_LABEL[0..47]))"},
-				{"priority=200,ct_state=-new+trk,ct_mark=0x20,ip", "move:NXM_NX_CT_LABEL[0..47]->NXM_OF_ETH_DST[],resubmit(,40)"},
-				{"priority=200,ct_state=+new+inv,ip", "drop"},
+				{"priority=200,ct_state=+new+trk,ip,reg0=0x1/0xffff", "ct(commit,table=40,zone=65520,exec(load:0x20->NXM_NX_CT_MARK[])"},
+				{"priority=200,ct_state=+inv+trk,ip", "drop"},
 				{"priority=190,ct_state=+new+trk,ip", "ct(commit,table=40,zone=65520)"},
 				{"priority=80,ip", "resubmit(,40)"},
 			},
