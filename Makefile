@@ -4,7 +4,7 @@ LDFLAGS         :=
 GOFLAGS         :=
 BINDIR          := $(CURDIR)/bin
 GO_FILES        := $(shell find . -type d -name '.cache' -prune -o -type f -name '*.go' -print)
-GOPATH          ?= $$(go env GOPATH)
+GOPATH          ?= $$($(GO) env GOPATH)
 DOCKER_CACHE    := $(CURDIR)/.cache
 
 .PHONY: all
@@ -67,7 +67,7 @@ docker-test-unit: $(DOCKER_CACHE)
 .PHONY: docker-tidy
 docker-tidy: $(DOCKER_CACHE)
 	@rm -f go.sum
-	@$(DOCKER_ENV) go mod tidy
+	@$(DOCKER_ENV) $(GO) mod tidy
 	@chmod -R 0755 $<
 	@chmod 0644 go.sum
 
@@ -121,7 +121,7 @@ golangci: .golangci-bin
 .linter:
 	@if ! PATH=$$PATH:$(GOPATH)/bin command -v golint > /dev/null; then \
 	  echo "===> Installing Golint <==="; \
-	  go get -u golang.org/x/lint/golint; \
+	  $(GO) get -u golang.org/x/lint/golint; \
 	fi
 
 .PHONY: lint
@@ -141,8 +141,8 @@ clean:
 # of gomock is desired, this file should be updated.
 .mockgen:
 	@echo "===> Installing Mockgen <==="
-	@go get github.com/golang/mock/gomock@1.3.1
-	@go install github.com/golang/mock/mockgen
+	@$(GO) get github.com/golang/mock/gomock@1.3.1
+	@$(GO) install github.com/golang/mock/mockgen
 	@touch $@
 
 .PHONY: mocks
