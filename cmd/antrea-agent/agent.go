@@ -89,10 +89,15 @@ func run(o *Options) error {
 	}
 	nodeConfig := agentInitializer.GetNodeConfig()
 
-	nodeRouteController := noderoute.NewNodeRouteController(k8sClient,
+	nodeRouteController := noderoute.NewNodeRouteController(
+		k8sClient,
 		informerFactory,
 		ofClient,
-		nodeConfig)
+		ovsBridgeClient,
+		ifaceStore,
+		nodeConfig,
+		ovsconfig.TunnelType(o.config.TunnelType),
+		agentInitializer.GetIPSecPSK())
 
 	// podUpdates is a channel for receiving Pod updates from CNIServer and
 	// notifying NetworkPolicyController to reconcile rules related to the
@@ -129,7 +134,7 @@ func run(o *Options) error {
 
 	go networkPolicyController.Run(stopCh)
 
-	agentMonitor := monitor.NewAgentMonitor(crdClient, o.config.OVSBridge, nodeConfig.Name, nodeConfig.PodCIDR.String(), ifaceStore, ofClient, ovsBridgeClient)
+	agentMonitor := monitor.NewAgentMonitor(crdClient, o.config.OVSBridge, nodeConfig.Name, nodeConfig.PodCIDR.String(), ifaceStore, ofClient, ovsBridgeClient, networkPolicyController)
 
 	go agentMonitor.Run(stopCh)
 
