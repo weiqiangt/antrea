@@ -11,6 +11,20 @@ spec:
   selector:
     component: antrea-controller
 ---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.clusterinfo.antrea.tanzu.vmware.com
+spec:
+  insecureSkipTLSVerify: true
+  group: clusterinfo.antrea.tanzu.vmware.com
+  groupPriorityMinimum: 1000
+  version: v1beta1
+  versionPriority: 15
+  service:
+    name: antrea
+    namespace: kube-system
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
