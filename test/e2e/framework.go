@@ -21,6 +21,7 @@ import (
 	"net"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/api/core/v1"
@@ -44,9 +45,11 @@ const (
 	// antreaNamespace is the K8s Namespace in which all Antrea resources are running.
 	antreaNamespace      string = "kube-system"
 	antreaDaemonSet      string = "antrea-agent"
+	antreaGWName         string = "gw0"
 	testNamespace        string = "antrea-test"
 	busyboxContainerName string = "busybox"
 	ovsContainerName     string = "antrea-ovs"
+	agentContainerName   string = "antrea-agent"
 	antreaYML            string = "antrea.yml"
 	antreaIPSecYML       string = "antrea-ipsec.yml"
 
@@ -260,10 +263,11 @@ func (data *TestData) deployAntreaCommon(ipsec bool) error {
 		yamlFile = antreaYML
 	}
 
-	rc, _, _, err := provider.RunCommandOnNode(masterNodeName(), "kubectl apply -f "+yamlFile)
+	rc, stdout, _, err := provider.RunCommandOnNode(masterNodeName(), "kubectl apply -f "+yamlFile)
 	if err != nil || rc != 0 {
 		return fmt.Errorf("error when deploying Antrea; is %s available on the master Node?", yamlFile)
 	}
+	fmt.Println(stdout)
 	return nil
 }
 
@@ -797,8 +801,14 @@ func (data *TestData) runPingCommandFromTestPod(podName string, targetIP string,
 	return err
 }
 
-func (data *TestData) runWgetCommandFromTestPod(podName string, svcName string) error {
-	cmd := []string{"nc", "-vz", "-w", "8", svcName + "." + testNamespace, "80"}
+func (data *TestData) runNetcatCommandFromTestPod(podName string, svcName string) error {
+	// Retrying several times to avoid flakes as the test involves DNS (coredns) and Service/Endpoints (kube-proxy).
+	cmd := []string{
+		"/bin/sh",
+		"-c",
+		fmt.Sprintf("for i in $(seq 1 5); do nc -vz -w 4 %s.%s %d && exit 0 || sleep 1; done; exit 1",
+			svcName, testNamespace, 80),
+	}
 	stdout, stderr, err := data.runCommandFromPod(testNamespace, podName, busyboxContainerName, cmd)
 	if err == nil {
 		return nil
@@ -806,8 +816,13 @@ func (data *TestData) runWgetCommandFromTestPod(podName string, svcName string) 
 	return fmt.Errorf("nc stdout: <%v>, stderr: <%v>, err: <%v>", stdout, stderr, err)
 }
 
-func (data *TestData) runWgetCommandFromTestPodToPodIP(podName string, podIP string) error {
-	cmd := []string{"nc", "-vz", "-w", "8", podIP, "80"}
-	_, _, err := data.runCommandFromPod(testNamespace, podName, busyboxContainerName, cmd)
-	return err
+func (data *TestData) doesOVSPortExist(antreaPodName string, portName string) (bool, error) {
+	cmd := []string{"ovs-vsctl", "port-to-br", portName}
+	_, stderr, err := data.runCommandFromPod(antreaNamespace, antreaPodName, ovsContainerName, cmd)
+	if err == nil {
+		return true, nil
+	} else if strings.Contains(stderr, "no port named") {
+		return false, nil
+	}
+	return false, fmt.Errorf("error when running ovs-vsctl command on Pod '%s': %v", antreaPodName, err)
 }
