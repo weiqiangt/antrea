@@ -18,19 +18,18 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/vmware-tanzu/antrea/pkg/apis/clusterinformation/v1beta1"
-	"github.com/vmware-tanzu/antrea/pkg/version"
-
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
+
+	"github.com/vmware-tanzu/antrea/pkg/apis/clusterinformation/v1beta1"
 )
 
 const (
-	serviceName  = "antrea"
-	podName      = "POD_NAME"
-	podNamespace = "POD_NAMESPACE"
-	nodeName     = "NODE_NAME"
+	SERVICE_NAME  = "antrea"
+	POD_NAME      = "POD_NAME"
+	POD_NAMESPACE = "POD_NAMESPACE"
+	NODE_NAME     = "NODE_NAME"
 )
 
 // Querier provides interface for both monitor CRD and CLI to consume controller and agent status.
@@ -38,7 +37,6 @@ type Querier interface {
 	GetSelfPod() v1.ObjectReference
 	GetSelfNode() v1.ObjectReference
 	GetNetworkPolicyControllerInfo() v1beta1.NetworkPolicyControllerInfo
-	GetVersion() string
 }
 
 type AgentQuerier interface {
@@ -69,10 +67,10 @@ type ControllerNetworkPolicyInfoQuerier interface {
 }
 
 func (monitor *agentMonitor) GetSelfPod() v1.ObjectReference {
-	if os.Getenv(podName) == "" || os.Getenv(podNamespace) == "" {
+	if os.Getenv(POD_NAME) == "" || os.Getenv(POD_NAMESPACE) == "" {
 		return v1.ObjectReference{}
 	}
-	return v1.ObjectReference{Kind: "Pod", Name: os.Getenv(podName), Namespace: os.Getenv(podNamespace)}
+	return v1.ObjectReference{Kind: "Pod", Name: os.Getenv(POD_NAME), Namespace: os.Getenv(POD_NAMESPACE)}
 }
 
 func (monitor *agentMonitor) GetSelfNode() v1.ObjectReference {
@@ -83,12 +81,12 @@ func (monitor *agentMonitor) GetSelfNode() v1.ObjectReference {
 }
 
 func (monitor *agentMonitor) GetOVSVersion() string {
-	v, err := monitor.ovsBridgeClient.GetOVSVersion()
+	version, err := monitor.ovsBridgeClient.GetOVSVersion()
 	if err != nil {
 		klog.Errorf("Failed to get OVS client version: %v", err)
 		return ""
 	}
-	return v
+	return version
 }
 
 func (monitor *agentMonitor) GetOVSFlowTable() map[string]int32 {
@@ -113,10 +111,6 @@ func (monitor *agentMonitor) GetLocalPodNum() int32 {
 	return int32(monitor.interfaceStore.GetContainerInterfaceNum())
 }
 
-func (monitor *agentMonitor) GetVersion() string {
-	return version.GetFullVersion()
-}
-
 func (monitor *agentMonitor) GetAgentConditions() []v1beta1.AgentCondition {
 	lastHeartbeatTime := metav1.Now()
 	connectionStatus := v1.ConditionTrue
@@ -138,25 +132,21 @@ func (monitor *agentMonitor) GetAgentConditions() []v1beta1.AgentCondition {
 }
 
 func (monitor *controllerMonitor) GetSelfPod() v1.ObjectReference {
-	if os.Getenv(podName) == "" || os.Getenv(podNamespace) == "" {
+	if os.Getenv(POD_NAME) == "" || os.Getenv(POD_NAMESPACE) == "" {
 		return v1.ObjectReference{}
 	}
-	return v1.ObjectReference{Kind: "Pod", Name: os.Getenv(podName), Namespace: os.Getenv(podNamespace)}
+	return v1.ObjectReference{Kind: "Pod", Name: os.Getenv(POD_NAME), Namespace: os.Getenv(POD_NAMESPACE)}
 }
 
 func (monitor *controllerMonitor) GetSelfNode() v1.ObjectReference {
-	if os.Getenv(nodeName) == "" {
+	if os.Getenv(NODE_NAME) == "" {
 		return v1.ObjectReference{}
 	}
-	return v1.ObjectReference{Kind: "Node", Name: os.Getenv(nodeName)}
+	return v1.ObjectReference{Kind: "Node", Name: os.Getenv(NODE_NAME)}
 }
 
 func (monitor *controllerMonitor) GetService() v1.ObjectReference {
-	return v1.ObjectReference{Kind: "Service", Name: serviceName}
-}
-
-func (monitor *controllerMonitor) GetVersion() string {
-	return version.GetFullVersion()
+	return v1.ObjectReference{Kind: "Service", Name: SERVICE_NAME}
 }
 
 func (monitor *controllerMonitor) GetNetworkPolicyControllerInfo() v1beta1.NetworkPolicyControllerInfo {
