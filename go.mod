@@ -12,11 +12,10 @@ require (
 	github.com/containernetworking/plugins v0.8.2-0.20190724153215-ded2f1757770
 	github.com/contiv/libOpenflow v0.0.0-20191113031650-a32467f65a17
 	github.com/contiv/libovsdb v0.0.0-20160406174930-bbc744d8ddc8 // indirect
-	github.com/contiv/ofnet v0.0.0-20180104211757-c080e5b6e9be
+	github.com/contiv/ofnet v0.0.0-00010101000000-000000000000
 	github.com/coreos/go-iptables v0.4.1
 	github.com/elazarl/goproxy v0.0.0-20190911111923-ecfe977594f1 // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible // indirect
-	github.com/fatih/structtag v1.2.0
 	github.com/gogo/protobuf v1.2.1
 	github.com/golang/mock v1.3.1
 	github.com/golang/protobuf v1.3.2
@@ -54,7 +53,6 @@ require (
 
 replace (
 	github.com/contiv/ofnet => github.com/wenyingd/ofnet v0.0.0-20191128031608-5339eaf55aa1
-	github.com/osrg/gobgp => github.com/osrg/gobgp v0.0.0-20160901022930-c58019018fe0 // indirect
 	// Octant is renamed from vmware/octant to vmware-tanzu/octant since v0.9.0.
 	// However, Octant v0.9.0 K8s API is not compatible with Antrea K8s API version.
 	// Furthermore, octant v0.8 and v0.9 do not check-in some generated code required for testing
