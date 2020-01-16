@@ -1,0 +1,8 @@
+FROM photon:latest
+
+LABEL maintainer="Antrea <projectantrea-dev@googlegroups.com>"
+LABEL description="A Docker image to run antctl."
+
+USER root
+
+COPY bin/antctl /usr/local/bin/

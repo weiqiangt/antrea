@@ -68,12 +68,12 @@ func TestCommandListApplyToCommand(t *testing.T) {
 	testRoot := new(cobra.Command)
 	testRoot.Short = "The component is ${component}"
 	testRoot.Long = "The component is ${component}"
-	testCommandList.ApplyToRootCommand(testRoot, true, false)
+	testCommandList.ApplyToRootCommand(testRoot)
 	// sub-commands should be attached
 	assert.True(t, testRoot.HasSubCommands())
 	// render should work as expected
-	assert.Contains(t, testRoot.Short, "The component is agent")
-	assert.Contains(t, testRoot.Long, "The component is agent")
+	assert.Contains(t, testRoot.Short, "The component is controller")
+	assert.Contains(t, testRoot.Long, "The component is controller")
 }
 
 // TestParseCommandList ensures the commandList could be correctly parsed.

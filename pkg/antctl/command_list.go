@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -61,13 +62,12 @@ func (cl *commandList) applyToMux(mux *mux.PathRecorderMux, aq monitor.AgentQuer
 		klog.Infof("Adding cli handler %s", reqPath)
 		mux.HandleFunc(reqPath, handler)
 		resources[groupPath] = append(resources[groupPath], metav1.APIResource{
-			Name:         def.Use,
-			SingularName: def.Use,
-			Kind:         def.Use,
-			Namespaced:   false,
-			Group:        def.GroupVersion.Group,
-			Version:      def.GroupVersion.Version,
-			Verbs:        metav1.Verbs{"get"},
+			Name:               def.Use,
+			SingularName:       def.Use,
+			Group:              def.GroupVersion.Group,
+			Version:            def.GroupVersion.Version,
+			Kind:               strings.Title(def.Use),
+			Verbs:              metav1.Verbs{"get", "list"},
 		})
 	}
 	// Setup up discovery handlers for command handlers.
@@ -102,9 +102,18 @@ func (cl *commandList) applyFlagsToRootCommand(root *cobra.Command) {
 
 // ApplyToRootCommand applies the commandList to the root cobra command, it applies
 // each commandDefinition of it to the root command as a sub-command.
-func (cl *commandList) ApplyToRootCommand(root *cobra.Command, isAgent bool, inPod bool) {
+func (cl *commandList) ApplyToRootCommand(root *cobra.Command) {
+	inPod := len(os.Getenv("POD_NAME")) != 0
+	isAgent := strings.HasPrefix(os.Getenv("POD_NAME"), "antrea-agent")
+	isController := strings.HasPrefix(os.Getenv("POD_NAME"), "antrea-controller")
+	clientMode := RemoteMode
+	if isAgent || isController {
+		clientMode = ComponentMode
+	} else if inPod {
+		clientMode = PodMode
+	}
 	client := &client{
-		inPod: inPod,
+		mode:  clientMode,
 		codec: cl.codec,
 	}
 	for _, groupCommand := range groupCommands {

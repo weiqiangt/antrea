@@ -30,6 +30,14 @@ import (
 	"k8s.io/klog"
 )
 
+type ClientMode string
+
+const (
+	ComponentMode ClientMode = "component"
+	PodMode       ClientMode = "pod"
+	RemoteMode    ClientMode = "remote"
+)
+
 // RequestOption describes options to issue requests to the antctl server.
 type RequestOption struct {
 	GroupVersion *schema.GroupVersion
@@ -49,21 +57,29 @@ type RequestOption struct {
 
 // client issues requests to an antctl server and gets the response.
 type client struct {
-	// inPod indicate whether the client is running in a pod or not.
-	inPod bool
+	// todo: Document for it
+	mode ClientMode
 	// codec is the CodecFactory for this command, it is needed for remote accessing.
 	codec serializer.CodecFactory
 }
 
+// TODO: update doc
 // resolveKubeconfig tries to load the kubeconfig specified in the RequestOption.
-// It will return error if the stating of the file failed or the kubeconfig is malformed.
-// It will not try to look up InCluster configuration. If the kubeconfig is loaded,
-// the groupVersion and the codec in the RequestOption will be populated into the
-// kubeconfig object.
+// It will return error if the stating of the file failed or the kubeconfig is
+// malformed. It will try to look up InCluster configuration if there is an environment
+// variable named POD_NAME. If the kubeconfig is loaded, the groupVersion and
+// the codec in the RequestOption will be populated into the kubeconfig object.
 func (c *client) resolveKubeconfig(opt *RequestOption) (*rest.Config, error) {
 	kubeconfig, err := clientcmd.BuildConfigFromFlags("", opt.Kubeconfig)
 	if err != nil {
-		return nil, err
+		if c.mode == RemoteMode {
+			return nil, err
+		}
+		klog.Warningf("Can not use kubeconfig %s, trying to use in-cluster config: %v", opt.Kubeconfig, err)
+		kubeconfig, err = rest.InClusterConfig()
+		if err != nil {
+			return nil, err
+		}
 	}
 	kubeconfig.GroupVersion = opt.GroupVersion
 	kubeconfig.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: c.codec}
@@ -108,15 +124,15 @@ func (c *client) localRequest(opt *RequestOption) (io.Reader, error) {
 // If the request succeeds, it will return an io.Reader which contains the response
 // data.
 func (c *client) Request(opt *RequestOption) (io.Reader, error) {
-	if c.inPod {
-		klog.Infoln("antctl runs as local mode")
+	klog.Infof("antctl runs as %s mode", c.mode)
+	if c.mode == ComponentMode {
 		return c.localRequest(opt)
 	}
 	kubeconfig, err := c.resolveKubeconfig(opt)
 	if err != nil {
 		return nil, err
 	}
-	restClient, err := rest.UnversionedRESTClientFor(kubeconfig)
+	restClient, err := rest.RESTClientFor(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create rest client: %w", err)
 	}

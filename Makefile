@@ -47,6 +47,8 @@ $(DOCKER_CACHE):
 # Inside the docker, the user is nameless and does not have a home directory. This is ok for our use case.
 DOCKER_ENV := \
 	@docker run --rm -u $$(id -u):$$(id -g) \
+		-e "GOPROXY=$$(go env GOPROXY)" \
+		-e "GOSUMDB=off" \
 		-e "GOCACHE=/tmp/gocache" \
 		-e "GOPATH=/tmp/gopath" \
 		-w /usr/src/github.com/vmware-tanzu/antrea \
@@ -155,6 +157,12 @@ codegen:
 	$(CURDIR)/hack/update-codegen.sh
 
 ### Docker images ###
+
+.PHONY: antctl-image
+antctl-image:
+	@echo "===> Building antrea/antctl Docker image <==="
+	docker build -t antrea/antctl -f build/images/Dockerfile.antctl .
+	docker tag antrea/antctl antrea/antctl:$(DOCKER_IMG_VERSION)
 
 .PHONY: ubuntu
 ubuntu:

@@ -10,11 +10,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: antctl
 rules:
-  - nonResourceURLs:
-      - /apis/system.antrea.tanzu.vmware.com
-      - /apis/system.antrea.tanzu.vmware.com/*
+  - apiGroups:
+      - system.antrea.tanzu.vmware.com
+    resources:
+      - version
     verbs:
       - get
+      - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

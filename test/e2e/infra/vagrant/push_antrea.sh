@@ -2,7 +2,9 @@
 
 : "${NUM_WORKERS:=1}"
 SAVED_IMG=/tmp/antrea-ubuntu.tar
+SAVED_ANTCTL_IMG=/tmp/antctl.tar
 IMG_NAME=antrea/antrea-ubuntu:latest
+ANTCTL_IMG_NAME=antrea/antctl:latest
 
 THIS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
@@ -25,6 +27,9 @@ fi
 
 echo "Saving $IMG_NAME image to $SAVED_IMG"
 docker save -o $SAVED_IMG $IMG_NAME
+
+echo "Saving $ANTCTL_IMG_NAME image to $SAVED_ANTCTL_IMG"
+docker save -o $SAVED_ANTCTL_IMG $ANTCTL_IMG_NAME
 
 function waitForNodes {
     pids=("$@")
@@ -58,6 +63,33 @@ pids[0]=$!
 for ((i=1; i<=$NUM_WORKERS; i++)); do
     name="k8s-node-worker-$i"
     ssh -F ssh-config $name docker load -i /tmp/antrea-ubuntu.tar &
+    pids[$i]=$!
+done
+# Wait for all child processes to complete
+waitForNodes "${pids[@]}"
+echo "Done!"
+
+echo "Copying $ANTCTL_IMG_NAME image to every node..."
+# Copy image to master
+scp -F ssh-config $SAVED_ANTCTL_IMG k8s-node-master:$SAVED_ANTCTL_IMG &
+pids[0]=$!
+# Loop over all worker nodes and copy image to each one
+for ((i=1; i<=$NUM_WORKERS; i++)); do
+    name="k8s-node-worker-$i"
+    scp -F ssh-config $SAVED_ANTCTL_IMG $name:$SAVED_ANTCTL_IMG &
+    pids[$i]=$!
+done
+# Wait for all child processes to complete
+waitForNodes "${pids[@]}"
+echo "Done!"
+
+echo "Loading $ANTCTL_IMG_NAME image in every node..."
+ssh -F ssh-config k8s-node-master docker load -i $SAVED_ANTCTL_IMG &
+pids[0]=$!
+# Loop over all worker nodes and copy image to each one
+for ((i=1; i<=$NUM_WORKERS; i++)); do
+    name="k8s-node-worker-$i"
+    ssh -F ssh-config $name docker load -i $SAVED_ANTCTL_IMG &
     pids[$i]=$!
 done
 # Wait for all child processes to complete
