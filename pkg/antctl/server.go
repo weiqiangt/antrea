@@ -29,31 +29,22 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/monitor"
 )
 
-// Server defines operations of an antctl server.
-type Server interface {
-	// Start runs the antctl server. When invoking this method, either AgentQuerier
-	// or ControllerQuerier must be passed, because implementations need to
-	// use the value of AgentMonitor and Controller monitor to tell out which
-	// component the server is running in. A running server can be stopped by
-	// closing the stopCh.
-	Start(aq monitor.AgentQuerier, cq monitor.ControllerQuerier, stopCh <-chan struct{})
-}
-
-type localServer struct {
-	// startOnce ensures the server could only be started one.
+// AgentServer is the antctl server running in antrea agents serves in-pod antctl
+// requests.
+type AgentServer struct {
+	// startOnce ensures the server could only be started once.
 	startOnce sync.Once
 	listener  net.Listener
 }
 
-// Start starts the server with the AgentQuerier or the ControllerQuerier passed.
-// The server will do graceful stop whenever it receives from the stopCh. One server
-// could only be run once.
-func (s *localServer) Start(aq monitor.AgentQuerier, cq monitor.ControllerQuerier, stopCh <-chan struct{}) {
+// Start starts the AgentServer. It guarantees the server could only be started
+// once. The server will do graceful stop whenever it receives from the stopCh.
+func (s *AgentServer) Start(aq monitor.AgentQuerier, stopCh <-chan struct{}) {
 	s.startOnce.Do(func() {
 		antctlMux := mux.NewPathRecorderMux("antctl-server")
-		CommandList.applyToMux(antctlMux, aq, cq)
+		CommandList.applyToMux(antctlMux, aq)
 		server := &http.Server{Handler: antctlMux}
-		// HTTP server graceful stop
+		// Graceful stop goroutine.
 		go func() {
 			<-stopCh
 			err := server.Shutdown(context.Background())
@@ -63,7 +54,7 @@ func (s *localServer) Start(aq monitor.AgentQuerier, cq monitor.ControllerQuerie
 				klog.Info("Antctl server stopped")
 			}
 		}()
-		// Start the http server
+		// Start the http server.
 		go func() {
 			klog.Info("Starting antctl server")
 			err := server.Serve(s.listener)
@@ -74,12 +65,13 @@ func (s *localServer) Start(aq monitor.AgentQuerier, cq monitor.ControllerQuerie
 	})
 }
 
-// NewLocalServer creates an antctl server which listens on the local domain socket.
-func NewLocalServer() (Server, error) {
+// NewAgentServer creates an antctl server. For safety concerns, it creates the
+// antctl server which listens on a predefined unix domain socket.
+func NewAgentServer() (*AgentServer, error) {
 	os.Remove(unixDomainSockAddr)
 	ln, err := net.Listen("unix", unixDomainSockAddr)
 	if err != nil {
 		return nil, fmt.Errorf("error when creating antctl local server: %w", err)
 	}
-	return &localServer{listener: ln}, nil
+	return &AgentServer{listener: ln}, nil
 }

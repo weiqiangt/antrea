@@ -39,8 +39,15 @@ $GOPATH/bin/deepcopy-gen \
   --go-header-file hack/boilerplate/license_header.go.txt
 
 $GOPATH/bin/conversion-gen  \
-  --input-dirs "${ANTREA_PKG}/pkg/apis/networking/v1beta1,${ANTREA_PKG}/pkg/apis/networking/" \
+  --input-dirs "${ANTREA_PKG}/pkg/apis/networking/v1beta1,${ANTREA_PKG}/pkg/apis/networking" \
   -O zz_generated.conversion \
+  --go-header-file hack/boilerplate/license_header.go.txt
+
+$GOPATH/bin/openapi-gen  \
+  --input-dirs "k8s.io/apimachinery/pkg/apis/meta/v1,k8s.io/apimachinery/pkg/runtime,k8s.io/apimachinery/pkg/version" \
+  --input-dirs "${ANTREA_PKG}/pkg/apis/networking/v1beta1,${ANTREA_PKG}/pkg/apis/networking" \
+  -O zz_generated.openapi \
+  --output-package "${ANTREA_PKG}/pkg/apis/networking" \
   --go-header-file hack/boilerplate/license_header.go.txt
 
 # Generate mocks for testing with mockgen.

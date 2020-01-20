@@ -12,5 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package handlers contains handler implementations for different antctl commands.
+// Package handlers contains agent side handler implementations for different
+// antctl commands.
 package handlers

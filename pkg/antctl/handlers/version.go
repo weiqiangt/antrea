@@ -25,33 +25,29 @@ import (
 
 var _ Factory = new(Version)
 
-// ComponentVersionResponse describes the internal response struct of the version
-// command. It contains the version of the component the antctl server is running
-// in, either the agent or the controller.
+// AgentVersionResponse describes the internal response struct of the version
+// command.
 // This struct is not the final response struct of the version command. The version
 // command definition has an AddonTransform which will populate this struct and the
 // version of antctl client to the final response.
-type ComponentVersionResponse struct {
-	AgentVersion      string `json:"agentVersion,omitempty" yaml:"agentVersion,omitempty"`
-	ControllerVersion string `json:"controllerVersion,omitempty" yaml:"controllerVersion,omitempty"`
+type AgentVersionResponse struct {
+	AgentVersion string `json:"agentVersion,omitempty" yaml:"agentVersion,omitempty"`
 }
 
-// Version is Factory to generate version command handler.
+// Version is the Factory which generates version command handler.
 type Version struct{}
 
-// Handler returns the function which can handle queries issued by the version command,
-func (v *Version) Handler(aq monitor.AgentQuerier, cq monitor.ControllerQuerier) http.HandlerFunc {
+// Handler returns the function which can handle queries issued by the version command.
+func (v *Version) Handler(aq monitor.AgentQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var m ComponentVersionResponse
+		var m AgentVersionResponse
 		if aq != nil {
 			m.AgentVersion = aq.GetVersion()
-		} else if cq != nil {
-			m.ControllerVersion = cq.GetVersion()
 		}
 		err := json.NewEncoder(w).Encode(m)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			klog.Errorf("Error when encoding ComponentVersionResponse to json: %v", err)
+			klog.Errorf("Error when encoding AgentVersionResponse to json: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
 	}

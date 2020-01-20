@@ -20,14 +20,12 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/monitor"
 )
 
-// Factory is the interface to generate command handlers.
+// Factory is the interface to generate handlers. The handlers will be used to
+// serve requests from the antctl binary which runs against agents.
 type Factory interface {
 	// Handler returns a net/http.HandlerFunc which will be used to handle
-	// requests issued by commands from the antctl client. An implementation
-	// needs to determine the component it is running in by checking nullable
-	// of the AgentQuerier or the ControllerQuerier. If the antctl server is
-	// running in the antrea-agent, the AgentQuerier will not be nil, otherwise,
-	// the ControllerQuerier will not be nil. If the command has no AddonTransform,
-	// the HandlerFunc need to write the data to the response body in JSON format.
-	Handler(aq monitor.AgentQuerier, cq monitor.ControllerQuerier) http.HandlerFunc
+	// requests issued by commands from the agent antctl client.
+	// If the command has no AddonTransform, the HandlerFunc need to write the
+	// data to the response body in JSON format.
+	Handler(aq monitor.AgentQuerier) http.HandlerFunc
 }

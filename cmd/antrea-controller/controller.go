@@ -19,12 +19,13 @@ import (
 	"net"
 	"time"
 
+	"k8s.io/apiserver/pkg/endpoints/openapi"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	genericoptions "k8s.io/apiserver/pkg/server/options"
 	"k8s.io/client-go/informers"
 	"k8s.io/klog"
 
-	"github.com/vmware-tanzu/antrea/pkg/antctl"
+	"github.com/vmware-tanzu/antrea/pkg/apis/networking"
 	"github.com/vmware-tanzu/antrea/pkg/apiserver"
 	"github.com/vmware-tanzu/antrea/pkg/apiserver/storage"
 	"github.com/vmware-tanzu/antrea/pkg/controller/networkpolicy"
@@ -78,11 +79,6 @@ func run(o *Options) error {
 		return fmt.Errorf("error creating API server: %v", err)
 	}
 
-	antctlServer, err := antctl.NewLocalServer()
-	if err != nil {
-		return fmt.Errorf("error when creating local antctl server: %w", err)
-	}
-
 	// set up signal capture: the first SIGTERM / SIGINT signal is handled gracefully and will
 	// cause the stopCh channel to be closed; if another signal is received before the program
 	// exits, we will force exit.
@@ -95,13 +91,7 @@ func run(o *Options) error {
 
 	go networkPolicyController.Run(stopCh)
 
-	preparedAPIServer := apiServer.GenericAPIServer.PrepareRun()
-	// Set up the antctl handlers on the controller API server for remote access.
-	antctl.CommandList.InstallToAPIServer(preparedAPIServer.GenericAPIServer, controllerMonitor)
-	go preparedAPIServer.Run(stopCh)
-
-	// Set up the antctl server for in-pod access.
-	antctlServer.Start(nil, controllerMonitor, stopCh)
+	go apiServer.GenericAPIServer.PrepareRun().Run(stopCh)
 
 	<-stopCh
 	klog.Info("Stopping Antrea controller")
@@ -142,6 +132,10 @@ func createAPIServerConfig(kubeconfig string,
 	if err := authorization.ApplyTo(&serverConfig.Authorization); err != nil {
 		return nil, err
 	}
+
+	serverConfig.OpenAPIConfig = genericapiserver.DefaultOpenAPIConfig(networking.GetOpenAPIDefinitions, openapi.NewDefinitionNamer(apiserver.Scheme))
+	serverConfig.OpenAPIConfig.Info.Title = networking.SchemeGroupVersion.Group
+	serverConfig.OpenAPIConfig.Info.Version = networking.SchemeGroupVersion.Version
 
 	return &apiserver.Config{
 		GenericConfig: serverConfig,

@@ -24,7 +24,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apiserver/pkg/server/mux"
 
 	"github.com/vmware-tanzu/antrea/pkg/client/clientset/versioned/scheme"
@@ -33,7 +32,7 @@ import (
 
 type testHandlerFactory struct{}
 
-func (t *testHandlerFactory) Handler(_ monitor.AgentQuerier, _ monitor.ControllerQuerier) http.HandlerFunc {
+func (t *testHandlerFactory) Handler(_ monitor.AgentQuerier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		fmt.Fprint(w, "test")
@@ -48,17 +47,13 @@ type testResponse struct {
 var testCommandList = &commandList{
 	definitions: []commandDefinition{
 		{
-			Use:                 "test",
-			Short:               "test short description ${component}",
-			Long:                "test description ${component}",
-			HandlerFactory:      new(testHandlerFactory),
-			TransformedResponse: reflect.TypeOf(testResponse{}),
-			Agent:               true,
-			Controller:          true,
-			GroupVersion: &schema.GroupVersion{
-				Group:   "test-clusterinformation.antrea.tanzu.vmware.com",
-				Version: "v1",
+			use:   "test",
+			short: "test short description ${component}",
+			long:  "test description ${component}",
+			agentEndpoint: &agentEndpoint{
+				HandlerFactory: new(testHandlerFactory),
 			},
+			transformedResponse: reflect.TypeOf(testResponse{}),
 		},
 	},
 	codec: scheme.Codecs,
@@ -68,19 +63,19 @@ func TestCommandListApplyToCommand(t *testing.T) {
 	testRoot := new(cobra.Command)
 	testRoot.Short = "The component is ${component}"
 	testRoot.Long = "The component is ${component}"
-	testCommandList.ApplyToRootCommand(testRoot, true, false)
+	testCommandList.ApplyToRootCommand(testRoot)
 	// sub-commands should be attached
 	assert.True(t, testRoot.HasSubCommands())
 	// render should work as expected
-	assert.Contains(t, testRoot.Short, "The component is agent")
-	assert.Contains(t, testRoot.Long, "The component is agent")
+	assert.Contains(t, testRoot.Short, "The component is controller")
+	assert.Contains(t, testRoot.Long, "The component is controller")
 }
 
 // TestParseCommandList ensures the commandList could be correctly parsed.
 func TestParseCommandList(t *testing.T) {
-	r := mux.NewPathRecorderMux("")
+	r := mux.NewPathRecorderMux("antctl-test")
 	assert.Len(t, testCommandList.validate(), 0)
-	testCommandList.applyToMux(r, nil, nil)
+	testCommandList.applyToMux(r, nil)
 
 	ts := httptest.NewServer(r)
 	defer ts.Close()
@@ -90,7 +85,7 @@ func TestParseCommandList(t *testing.T) {
 		statusCode int
 	}{
 		"ExistPath": {
-			path:       "/apis/" + testCommandList.definitions[0].GroupVersion.String() + "/test",
+			path:       testCommandList.definitions[0].agentRequestPath(),
 			statusCode: http.StatusOK,
 		},
 		"NotExistPath": {

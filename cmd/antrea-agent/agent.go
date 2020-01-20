@@ -90,7 +90,7 @@ func run(o *Options) error {
 	}
 	nodeConfig := agentInitializer.GetNodeConfig()
 
-	antctlServer, err := antctl.NewLocalServer()
+	antctlServer, err := antctl.NewAgentServer()
 	if err != nil {
 		return fmt.Errorf("error when creating local antctl server: %w", err)
 	}
@@ -144,7 +144,7 @@ func run(o *Options) error {
 
 	go agentMonitor.Run(stopCh)
 
-	antctlServer.Start(agentMonitor, nil, stopCh)
+	antctlServer.Start(agentMonitor, stopCh)
 
 	<-stopCh
 	klog.Info("Stopping Antrea agent")

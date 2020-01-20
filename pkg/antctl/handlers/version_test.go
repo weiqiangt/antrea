@@ -30,22 +30,14 @@ func TestVersion(t *testing.T) {
 	defer ctrl.Finish()
 
 	testcases := map[string]struct {
-		version               string
-		expectedOutput        string
-		expectedStatusCode    int
-		isAgent, isController bool
+		version            string
+		expectedOutput     string
+		expectedStatusCode int
 	}{
 		"AgentVersion": {
 			version:            "v0.0.1",
 			expectedOutput:     "{\"agentVersion\":\"v0.0.1\"}\n",
 			expectedStatusCode: http.StatusOK,
-			isAgent:            true,
-		},
-		"ControllerVersion": {
-			version:            "v0.0.1",
-			expectedOutput:     "{\"controllerVersion\":\"v0.0.1\"}\n",
-			expectedStatusCode: http.StatusOK,
-			isController:       true,
 		},
 	}
 	for k, tc := range testcases {
@@ -53,15 +45,9 @@ func TestVersion(t *testing.T) {
 			req, err := http.NewRequest("GET", "/", nil)
 			assert.Nil(t, err)
 			recorder := httptest.NewRecorder()
-			if tc.isAgent {
-				aq := mockmonitor.NewMockAgentQuerier(ctrl)
-				aq.EXPECT().GetVersion().Return(tc.version)
-				new(Version).Handler(aq, nil).ServeHTTP(recorder, req)
-			} else if tc.isController {
-				cq := mockmonitor.NewMockControllerQuerier(ctrl)
-				cq.EXPECT().GetVersion().Return(tc.version)
-				new(Version).Handler(nil, cq).ServeHTTP(recorder, req)
-			}
+			aq := mockmonitor.NewMockAgentQuerier(ctrl)
+			aq.EXPECT().GetVersion().Return(tc.version)
+			new(Version).Handler(aq).ServeHTTP(recorder, req)
 			assert.Equal(t, tc.expectedStatusCode, recorder.Code, k)
 			assert.Equal(t, tc.expectedOutput, recorder.Body.String(), k)
 		})

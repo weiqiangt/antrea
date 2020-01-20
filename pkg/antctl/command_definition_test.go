@@ -87,9 +87,10 @@ func TestFormat(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opt := &commandDefinition{
-				SingleObject:        tc.singleton,
-				TransformedResponse: tc.responseStruct,
-				AddonTransform:      tc.transform,
+				singleObject:        tc.singleton,
+				transformedResponse: tc.responseStruct,
+				controllerEndpoint:  &controllerEndpoint{addonTransform: tc.transform},
+				agentEndpoint:       &agentEndpoint{addonTransform: tc.transform},
 			}
 			var responseData []byte
 			responseData, err := json.Marshal(tc.rawResponseData)
@@ -126,19 +127,19 @@ func TestCommandDefinitionGenerateExample(t *testing.T) {
 			cmdChain:     "first second third",
 			singleObject: true,
 			responseType: reflect.TypeOf(fooResponse{}),
-			expect:       "  Get the foo\n  $ first second third test\n",
+			expect:       "  Get the test\n  $ first second third test\n",
 		},
 		"NoKeyList": {
 			use:          "test",
 			cmdChain:     "first second third",
 			responseType: reflect.TypeOf(fooResponse{}),
-			expect:       "  Get the list of foo\n  $ first second third test\n",
+			expect:       "  Get the list of test\n  $ first second third test\n",
 		},
 		"KeyList": {
 			use:          "test",
 			cmdChain:     "first second third",
 			responseType: reflect.TypeOf(keyFooResponse{}),
-			expect:       "  Get a keyfoo\n  $ first second third test [bar]\n  Get the list of keyfoo\n  $ first second third test\n",
+			expect:       "  Get a test\n  $ first second third test [bar]\n  Get the list of test\n  $ first second third test\n",
 		},
 	} {
 		t.Run(k, func(t *testing.T) {
@@ -152,8 +153,9 @@ func TestCommandDefinitionGenerateExample(t *testing.T) {
 			cmd.Use = tc.use
 
 			co := &commandDefinition{
-				SingleObject:        tc.singleObject,
-				TransformedResponse: tc.responseType,
+				use:                 tc.use,
+				singleObject:        tc.singleObject,
+				transformedResponse: tc.responseType,
 			}
 			co.applyExampleToCommand(cmd)
 			assert.Equal(t, tc.expect, cmd.Example)
