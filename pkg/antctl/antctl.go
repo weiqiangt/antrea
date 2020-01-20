@@ -22,6 +22,7 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/antctl/handlers"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/addressgroup"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/appliedtogroup"
+	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/flowtable"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/networkpolicy"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/version"
 	clusterinfov1beta1 "github.com/vmware-tanzu/antrea/pkg/apis/clusterinformation/v1beta1"
@@ -102,6 +103,16 @@ var CommandList = &commandList{
 				addonTransform: addressgroup.Transform,
 			},
 			transformedResponse: reflect.TypeOf(addressgroup.Response{}),
+		},
+		{
+			use:   "flow-table",
+			short: "Get all flow tables status",
+			long:  "Get all flow tables status of current antrea agent",
+			agentEndpoint: &agentEndpoint{
+				HandlerFactory: new(handlers.FlowTable),
+			},
+			commandGroup: get,
+			transformedResponse: reflect.TypeOf(flowtable.Response{}),
 		},
 	},
 	codec: scheme.Codecs,
