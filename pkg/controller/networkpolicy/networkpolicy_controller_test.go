@@ -17,6 +17,7 @@ package networkpolicy
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"reflect"
 	"testing"
 	"time"
@@ -94,10 +95,13 @@ func newClientset() *fake.Clientset {
 func TestAddNetworkPolicy(t *testing.T) {
 	protocolTCP := networking.ProtocolTCP
 	intstr80, intstr81 := intstr.FromInt(80), intstr.FromInt(81)
-	int80, int81 := int32(80), int32(81)
+	int80, int81 := intstr.FromInt(80), intstr.FromInt(81)
 	selectorA := metav1.LabelSelector{MatchLabels: map[string]string{"foo1": "bar1"}}
 	selectorB := metav1.LabelSelector{MatchLabels: map[string]string{"foo2": "bar2"}}
 	selectorC := metav1.LabelSelector{MatchLabels: map[string]string{"foo3": "bar3"}}
+	selectorAll := metav1.LabelSelector{}
+	matchAllPeerEgress := matchAllPeer
+	matchAllPeerEgress.AddressGroups = []string{getNormalizedUID(toGroupSelector("", nil, &selectorAll).NormalizedName)}
 	tests := []struct {
 		name               string
 		inputPolicy        *networkingv1.NetworkPolicy
@@ -145,13 +149,13 @@ func TestAddNetworkPolicy(t *testing.T) {
 				Namespace: "nsA",
 				Rules: []networking.NetworkPolicyRule{{
 					Direction: networking.DirectionOut,
-					To:        matchAllPeer,
+					To:        matchAllPeerEgress,
 					Services:  nil,
 				}},
 				AppliedToGroups: []string{getNormalizedUID(toGroupSelector("nsA", &metav1.LabelSelector{}, nil).NormalizedName)},
 			},
 			expAppliedToGroups: 1,
-			expAddressGroups:   0,
+			expAddressGroups:   1,
 		},
 		{
 			name: "default-deny-ingress",
@@ -363,7 +367,7 @@ func TestAddNetworkPolicy(t *testing.T) {
 		npc.addNetworkPolicy(tt.inputPolicy)
 	}
 	assert.Equal(t, npc.GetNetworkPolicyNum(), 6, "expected networkPolicy number is 6")
-	assert.Equal(t, npc.GetAddressGroupNum(), 3, "expected addressGroup number is 3")
+	assert.Equal(t, npc.GetAddressGroupNum(), 4, "expected addressGroup number is 4")
 	assert.Equal(t, npc.GetAppliedToGroupNum(), 2, "appliedToGroup number is 2")
 }
 
@@ -1026,16 +1030,9 @@ func TestAddPod(t *testing.T) {
 			} else {
 				assert.Len(t, podsAdded, 0, "expected Pod not to match AppliedToGroup")
 			}
-			if tt.inAddressGroupMatch {
-				assert.Contains(t, updatedInAddrGroup.Addresses, "1.2.3.4")
-			} else {
-				assert.NotContains(t, updatedInAddrGroup.Addresses, "1.2.3.4")
-			}
-			if tt.outAddressGroupMatch {
-				assert.Contains(t, updatedOutAddrGroup.Addresses, "1.2.3.4")
-			} else {
-				assert.NotContains(t, updatedOutAddrGroup.Addresses, "1.2.3.4")
-			}
+			memberPod := &networking.GroupMemberPod{IP: ipStrToIPAddress("1.2.3.4")}
+			assert.Equal(t, tt.inAddressGroupMatch, updatedInAddrGroup.Pods.Has(memberPod))
+			assert.Equal(t, tt.outAddressGroupMatch, updatedOutAddrGroup.Pods.Has(memberPod))
 		})
 	}
 }
@@ -1074,10 +1071,10 @@ func TestDeletePod(t *testing.T) {
 	}
 	p1IP := "1.1.1.1"
 	p2IP := "2.2.2.2"
-	p1 := getPod("p1", ns, "", p1IP)
+	p1 := getPod("p1", ns, "", p1IP, false)
 	// Ensure Pod p1 matches AppliedToGroup.
 	p1.Labels = matchLabels
-	p2 := getPod("p2", ns, "", p2IP)
+	p2 := getPod("p2", ns, "", p2IP, false)
 	// Ensure Pod p2 matches AddressGroup.
 	p2.Labels = ruleLabels
 	_, npc := newController()
@@ -1105,7 +1102,8 @@ func TestDeletePod(t *testing.T) {
 	updatedAddrGroupObj, _, _ := npc.addressGroupStore.Get(addrGroup.Name)
 	updatedAddrGroup := updatedAddrGroupObj.(*antreatypes.AddressGroup)
 	// Ensure Pod2 IP is removed from AddressGroup.
-	assert.NotContains(t, updatedAddrGroup.Addresses, p2IP)
+	memberPod2 := &networking.GroupMemberPod{IP: ipStrToIPAddress(p2IP)}
+	assert.False(t, updatedAddrGroup.Pods.Has(memberPod2))
 }
 
 func TestAddNamespace(t *testing.T) {
@@ -1202,8 +1200,8 @@ func TestAddNamespace(t *testing.T) {
 			_, npc := newController()
 			npc.addNetworkPolicy(testNPObj)
 			npc.namespaceStore.Add(tt.addedNamespace)
-			p1 := getPod("p1", "nsA", "nodeA", "1.2.3.4")
-			p2 := getPod("p2", "nsA", "nodeA", "2.2.3.4")
+			p1 := getPod("p1", "nsA", "nodeA", "1.2.3.4", false)
+			p2 := getPod("p2", "nsA", "nodeA", "2.2.3.4", false)
 			npc.podStore.Add(p1)
 			npc.podStore.Add(p2)
 			inGroupID := getNormalizedUID(toGroupSelector("", nil, &selectorIn).NormalizedName)
@@ -1214,20 +1212,12 @@ func TestAddNamespace(t *testing.T) {
 			updatedInAddrGroup := updatedInAddrGroupObj.(*antreatypes.AddressGroup)
 			updatedOutAddrGroupObj, _, _ := npc.addressGroupStore.Get(outGroupID)
 			updatedOutAddrGroup := updatedOutAddrGroupObj.(*antreatypes.AddressGroup)
-			if tt.inAddressGroupMatch {
-				assert.Contains(t, updatedInAddrGroup.Addresses, "1.2.3.4")
-				assert.Contains(t, updatedInAddrGroup.Addresses, "2.2.3.4")
-			} else {
-				assert.NotContains(t, updatedInAddrGroup.Addresses, "1.2.3.4")
-				assert.NotContains(t, updatedInAddrGroup.Addresses, "2.2.3.4")
-			}
-			if tt.outAddressGroupMatch {
-				assert.Contains(t, updatedOutAddrGroup.Addresses, "1.2.3.4")
-				assert.Contains(t, updatedOutAddrGroup.Addresses, "2.2.3.4")
-			} else {
-				assert.NotContains(t, updatedOutAddrGroup.Addresses, "1.2.3.4")
-				assert.NotContains(t, updatedOutAddrGroup.Addresses, "2.2.3.4")
-			}
+			memberPod1 := &networking.GroupMemberPod{IP: ipStrToIPAddress("1.2.3.4")}
+			memberPod2 := &networking.GroupMemberPod{IP: ipStrToIPAddress("2.2.3.4")}
+			assert.Equal(t, tt.inAddressGroupMatch, updatedInAddrGroup.Pods.Has(memberPod1))
+			assert.Equal(t, tt.inAddressGroupMatch, updatedInAddrGroup.Pods.Has(memberPod2))
+			assert.Equal(t, tt.outAddressGroupMatch, updatedOutAddrGroup.Pods.Has(memberPod1))
+			assert.Equal(t, tt.outAddressGroupMatch, updatedOutAddrGroup.Pods.Has(memberPod2))
 		})
 	}
 }
@@ -1325,8 +1315,8 @@ func TestDeleteNamespace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, npc := newController()
 			npc.addNetworkPolicy(testNPObj)
-			p1 := getPod("p1", "nsA", "", "1.1.1.1")
-			p2 := getPod("p2", "nsA", "", "1.1.1.2")
+			p1 := getPod("p1", "nsA", "", "1.1.1.1", false)
+			p2 := getPod("p2", "nsA", "", "1.1.1.2", false)
 			npc.namespaceStore.Add(tt.deletedNamespace)
 			npc.podStore.Add(p1)
 			npc.podStore.Add(p2)
@@ -1344,13 +1334,15 @@ func TestDeleteNamespace(t *testing.T) {
 			updatedInAddrGroup := updatedInAddrGroupObj.(*antreatypes.AddressGroup)
 			updatedOutAddrGroupObj, _, _ := npc.addressGroupStore.Get(outGroupID)
 			updatedOutAddrGroup := updatedOutAddrGroupObj.(*antreatypes.AddressGroup)
+			memberPod1 := &networking.GroupMemberPod{IP: ipStrToIPAddress("1.1.1.1")}
+			memberPod2 := &networking.GroupMemberPod{IP: ipStrToIPAddress("1.1.1.2")}
 			if tt.inAddressGroupMatch {
-				assert.NotContains(t, updatedInAddrGroup.Addresses, "1.2.3.4")
-				assert.NotContains(t, updatedInAddrGroup.Addresses, "2.2.3.4")
+				assert.False(t, updatedInAddrGroup.Pods.Has(memberPod1))
+				assert.False(t, updatedInAddrGroup.Pods.Has(memberPod2))
 			}
 			if tt.outAddressGroupMatch {
-				assert.NotContains(t, updatedOutAddrGroup.Addresses, "1.2.3.4")
-				assert.NotContains(t, updatedOutAddrGroup.Addresses, "2.2.3.4")
+				assert.False(t, updatedOutAddrGroup.Pods.Has(memberPod1))
+				assert.False(t, updatedOutAddrGroup.Pods.Has(memberPod2))
 			}
 		})
 	}
@@ -1542,7 +1534,7 @@ func TestToAntreaProtocol(t *testing.T) {
 
 func TestToAntreaServices(t *testing.T) {
 	tcpProto := v1.ProtocolTCP
-	portNum := int32(80)
+	portNum := intstr.FromInt(80)
 	tables := []struct {
 		ports     []networkingv1.NetworkPolicyPort
 		expValues []networking.Service
@@ -1572,7 +1564,7 @@ func TestToAntreaServices(t *testing.T) {
 
 func TestToAntreaIPBlock(t *testing.T) {
 	expIpNet := networking.IPNet{
-		IP:           store.IPStrToIPAddress("10.0.0.0"),
+		IP:           ipStrToIPAddress("10.0.0.0"),
 		PrefixLength: 24,
 	}
 	tables := []struct {
@@ -1617,10 +1609,174 @@ func TestToAntreaIPBlock(t *testing.T) {
 	}
 }
 
+func TestToAntreaPeer(t *testing.T) {
+	testNPObj := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "npA",
+			Namespace: "nsA",
+		},
+	}
+	cidr := "10.0.0.0/16"
+	cidrIPNet, _ := cidrStrToIPNet(cidr)
+	exc1 := "10.0.1.0/24"
+	exc2 := "10.0.2.0/24"
+	excSlice := []string{exc1, exc2}
+	exc1Net, _ := cidrStrToIPNet(exc1)
+	exc2Net, _ := cidrStrToIPNet(exc2)
+	selectorIP := networkingv1.IPBlock{CIDR: cidr}
+	selectorIPAndExc := networkingv1.IPBlock{CIDR: cidr,
+		Except: excSlice}
+	selectorA := metav1.LabelSelector{MatchLabels: map[string]string{"foo1": "bar1"}}
+	selectorB := metav1.LabelSelector{MatchLabels: map[string]string{"foo2": "bar2"}}
+	selectorC := metav1.LabelSelector{MatchLabels: map[string]string{"foo3": "bar3"}}
+	selectorAll := metav1.LabelSelector{}
+	matchAllPodsPeer := matchAllPeer
+	matchAllPodsPeer.AddressGroups = []string{getNormalizedUID(toGroupSelector("", nil, &selectorAll).NormalizedName)}
+	tests := []struct {
+		name      string
+		inPeers   []networkingv1.NetworkPolicyPeer
+		outPeer   networking.NetworkPolicyPeer
+		direction networking.Direction
+	}{
+		{
+			name: "pod-ns-selector-peer-ingress",
+			inPeers: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector:       &selectorA,
+					NamespaceSelector: &selectorB,
+				},
+				{
+					PodSelector: &selectorC,
+				},
+			},
+			outPeer: networking.NetworkPolicyPeer{
+				AddressGroups: []string{
+					getNormalizedUID(toGroupSelector("nsA", &selectorA, &selectorB).NormalizedName),
+					getNormalizedUID(toGroupSelector("nsA", &selectorC, nil).NormalizedName),
+				},
+			},
+			direction: networking.DirectionIn,
+		},
+		{
+			name: "pod-ns-selector-peer-egress",
+			inPeers: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector:       &selectorA,
+					NamespaceSelector: &selectorB,
+				},
+				{
+					PodSelector: &selectorC,
+				},
+			},
+			outPeer: networking.NetworkPolicyPeer{
+				AddressGroups: []string{
+					getNormalizedUID(toGroupSelector("nsA", &selectorA, &selectorB).NormalizedName),
+					getNormalizedUID(toGroupSelector("nsA", &selectorC, nil).NormalizedName),
+				},
+			},
+			direction: networking.DirectionOut,
+		},
+		{
+			name: "ipblock-selector-peer-ingress",
+			inPeers: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &selectorIP,
+				},
+			},
+			outPeer: networking.NetworkPolicyPeer{
+				IPBlocks: []networking.IPBlock{
+					{
+						CIDR: *cidrIPNet,
+					},
+				},
+			},
+			direction: networking.DirectionIn,
+		},
+		{
+			name: "ipblock-selector-peer-egress",
+			inPeers: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &selectorIP,
+				},
+			},
+			outPeer: networking.NetworkPolicyPeer{
+				IPBlocks: []networking.IPBlock{
+					{
+						CIDR: *cidrIPNet,
+					},
+				},
+			},
+			direction: networking.DirectionOut,
+		},
+		{
+			name: "ipblock-with-exc-selector-peer-ingress",
+			inPeers: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &selectorIPAndExc,
+				},
+			},
+			outPeer: networking.NetworkPolicyPeer{
+				IPBlocks: []networking.IPBlock{
+					{
+						CIDR:   *cidrIPNet,
+						Except: []networking.IPNet{*exc1Net, *exc2Net},
+					},
+				},
+			},
+			direction: networking.DirectionIn,
+		},
+		{
+			name: "ipblock-with-exc-selector-peer-egress",
+			inPeers: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &selectorIPAndExc,
+				},
+			},
+			outPeer: networking.NetworkPolicyPeer{
+				IPBlocks: []networking.IPBlock{
+					{
+						CIDR:   *cidrIPNet,
+						Except: []networking.IPNet{*exc1Net, *exc2Net},
+					},
+				},
+			},
+			direction: networking.DirectionOut,
+		},
+		{
+			name:      "empty-peer-ingress",
+			inPeers:   []networkingv1.NetworkPolicyPeer{},
+			outPeer:   matchAllPeer,
+			direction: networking.DirectionIn,
+		},
+		{
+			name:      "empty-peer-egress",
+			inPeers:   []networkingv1.NetworkPolicyPeer{},
+			outPeer:   matchAllPodsPeer,
+			direction: networking.DirectionOut,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, npc := newController()
+			actualPeer := npc.toAntreaPeer(tt.inPeers, testNPObj, tt.direction)
+			if !reflect.DeepEqual(tt.outPeer.AddressGroups, (*actualPeer).AddressGroups) {
+				t.Errorf("Unexpected AddressGroups in Antrea Peer conversion. Expected %v, got %v", tt.outPeer.AddressGroups, (*actualPeer).AddressGroups)
+			}
+			if len(tt.outPeer.IPBlocks) != len((*actualPeer).IPBlocks) {
+				t.Errorf("Unexpected number of IPBlocks in Antrea Peer conversion. Expected %v, got %v", len(tt.outPeer.IPBlocks), len((*actualPeer).IPBlocks))
+			}
+			for i := 0; i < len(tt.outPeer.IPBlocks); i++ {
+				if !compareIPBlocks(&(tt.outPeer.IPBlocks[i]), &((*actualPeer).IPBlocks[i])) {
+					t.Errorf("Unexpected IPBlocks in Antrea Peer conversion. Expected %v, got %v", tt.outPeer.IPBlocks[i], (*actualPeer).IPBlocks[i])
+				}
+			}
+		})
+	}
+}
+
 func TestProcessNetworkPolicy(t *testing.T) {
 	protocolTCP := networking.ProtocolTCP
 	intstr80, intstr81 := intstr.FromInt(80), intstr.FromInt(81)
-	int80, int81 := int32(80), int32(81)
 	selectorA := metav1.LabelSelector{MatchLabels: map[string]string{"foo1": "bar1"}}
 	selectorB := metav1.LabelSelector{MatchLabels: map[string]string{"foo2": "bar2"}}
 	selectorC := metav1.LabelSelector{MatchLabels: map[string]string{"foo3": "bar3"}}
@@ -1725,7 +1881,7 @@ func TestProcessNetworkPolicy(t *testing.T) {
 						Services: []networking.Service{
 							{
 								Protocol: &protocolTCP,
-								Port:     &int80,
+								Port:     &intstr80,
 							},
 						},
 					},
@@ -1737,7 +1893,7 @@ func TestProcessNetworkPolicy(t *testing.T) {
 						Services: []networking.Service{
 							{
 								Protocol: &protocolTCP,
-								Port:     &int81,
+								Port:     &intstr81,
 							},
 						},
 					},
@@ -1794,7 +1950,7 @@ func TestProcessNetworkPolicy(t *testing.T) {
 						Services: []networking.Service{
 							{
 								Protocol: &protocolTCP,
-								Port:     &int80,
+								Port:     &intstr80,
 							},
 						},
 					},
@@ -1806,7 +1962,7 @@ func TestProcessNetworkPolicy(t *testing.T) {
 						Services: []networking.Service{
 							{
 								Protocol: &protocolTCP,
-								Port:     &int81,
+								Port:     &intstr81,
 							},
 						},
 					},
@@ -1831,6 +1987,215 @@ func TestProcessNetworkPolicy(t *testing.T) {
 
 			if actualAppliedToGroups := len(c.appliedToGroupStore.List()); actualAppliedToGroups != tt.expectedAppliedToGroups {
 				t.Errorf("len(appliedToGroupStore.List()) got %v, want %v", actualAppliedToGroups, tt.expectedAppliedToGroups)
+			}
+		})
+	}
+}
+
+func TestPodToMemberPod(t *testing.T) {
+	namedPod := getPod("", "", "", "", true)
+	unNamedPod := getPod("", "", "", "", false)
+	tests := []struct {
+		name         string
+		inputPod     *v1.Pod
+		expMemberPod networking.GroupMemberPod
+		includeIP    bool
+		includeRef   bool
+		namedPort    bool
+	}{
+		{
+			name:     "namedport-pod-with-ip-ref",
+			inputPod: namedPod,
+			expMemberPod: networking.GroupMemberPod{
+				IP: ipStrToIPAddress(namedPod.Status.PodIP),
+				Pod: &networking.PodReference{
+					Name:      namedPod.Name,
+					Namespace: namedPod.Namespace,
+				},
+				Ports: []networking.NamedPort{
+					{
+						Port:     80,
+						Name:     "http",
+						Protocol: "tcp",
+					},
+				},
+			},
+			includeIP:  true,
+			includeRef: true,
+			namedPort:  true,
+		},
+		{
+			name:     "namedport-pod-with-ip",
+			inputPod: namedPod,
+			expMemberPod: networking.GroupMemberPod{
+				IP: ipStrToIPAddress(namedPod.Status.PodIP),
+				Ports: []networking.NamedPort{
+					{
+						Port:     80,
+						Name:     "http",
+						Protocol: "tcp",
+					},
+				},
+			},
+			includeIP:  true,
+			includeRef: false,
+			namedPort:  true,
+		},
+		{
+			name:     "namedport-pod-with-ref",
+			inputPod: namedPod,
+			expMemberPod: networking.GroupMemberPod{
+				Pod: &networking.PodReference{
+					Name:      namedPod.Name,
+					Namespace: namedPod.Namespace,
+				},
+				Ports: []networking.NamedPort{
+					{
+						Port:     80,
+						Name:     "http",
+						Protocol: "tcp",
+					},
+				},
+			},
+			includeIP:  false,
+			includeRef: true,
+			namedPort:  true,
+		},
+		{
+			name:     "unnamedport-pod-with-ref",
+			inputPod: unNamedPod,
+			expMemberPod: networking.GroupMemberPod{
+				Pod: &networking.PodReference{
+					Name:      unNamedPod.Name,
+					Namespace: unNamedPod.Namespace,
+				},
+			},
+			includeIP:  false,
+			includeRef: true,
+			namedPort:  false,
+		},
+		{
+			name:     "unnamedport-pod-with-ip",
+			inputPod: unNamedPod,
+			expMemberPod: networking.GroupMemberPod{
+				IP: ipStrToIPAddress(unNamedPod.Status.PodIP),
+			},
+			includeIP:  true,
+			includeRef: false,
+			namedPort:  false,
+		},
+		{
+			name:     "unnamedport-pod-with-ip-ref",
+			inputPod: unNamedPod,
+			expMemberPod: networking.GroupMemberPod{
+				IP: ipStrToIPAddress(unNamedPod.Status.PodIP),
+				Pod: &networking.PodReference{
+					Name:      unNamedPod.Name,
+					Namespace: unNamedPod.Namespace,
+				},
+				Ports: []networking.NamedPort{
+					{
+						Port:     80,
+						Name:     "http",
+						Protocol: "tcp",
+					},
+				},
+			},
+			includeIP:  true,
+			includeRef: true,
+			namedPort:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actualMemberPod := podToMemberPod(tt.inputPod, tt.includeIP, tt.includeRef)
+			// Case where the PodReference must not be populated.
+			if !tt.includeRef {
+				if actualMemberPod.Pod != nil {
+					t.Errorf("podToMemberPod() got unexpected PodReference %v, want nil", *(*actualMemberPod).Pod)
+				}
+			} else if !reflect.DeepEqual(*(*actualMemberPod).Pod, *(tt.expMemberPod).Pod) {
+				t.Errorf("podToMemberPod() got unexpected PodReference %v, want %v", *(*actualMemberPod).Pod, *(tt.expMemberPod).Pod)
+			}
+			// Case where the IPAddress must not be populated.
+			if !tt.includeIP {
+				if actualMemberPod.IP != nil {
+					t.Errorf("podToMemberPod() got unexpected IP %v, want nil", actualMemberPod.IP)
+				}
+			} else if bytes.Compare(actualMemberPod.IP, tt.expMemberPod.IP) != 0 {
+				t.Errorf("podToMemberPod() got unexpected IP %v, want %v", actualMemberPod.IP, tt.expMemberPod.IP)
+			}
+			if !tt.namedPort {
+				if len(actualMemberPod.Ports) > 0 {
+					t.Errorf("podToMemberPod() got unexpected Ports %v, want []", actualMemberPod.Ports)
+				}
+			} else if !reflect.DeepEqual(actualMemberPod.Ports, tt.expMemberPod.Ports) {
+				t.Errorf("podToMemberPod() got unexpected Ports %v, want %v", actualMemberPod.Ports, tt.expMemberPod.Ports)
+			}
+		})
+	}
+}
+
+func TestCIDRStrToIPNet(t *testing.T) {
+	tests := []struct {
+		name string
+		inC  string
+		expC *networking.IPNet
+	}{
+		{
+			name: "cidr-valid",
+			inC:  "10.0.0.0/16",
+			expC: &networking.IPNet{
+				IP:           ipStrToIPAddress("10.0.0.0"),
+				PrefixLength: int32(16),
+			},
+		},
+		{
+			name: "cidr-invalid",
+			inC:  "10.0.0.0/",
+			expC: nil,
+		},
+		{
+			name: "cidr-prefix-invalid",
+			inC:  "10.0.0.0/a",
+			expC: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actC, _ := cidrStrToIPNet(tt.inC)
+			if !reflect.DeepEqual(actC, tt.expC) {
+				t.Errorf("cidrStrToIPNet() got unexpected IPNet %v, want %v", actC, tt.expC)
+			}
+		})
+	}
+}
+
+func TestIPStrToIPAddress(t *testing.T) {
+	ip1 := "10.0.1.10"
+	expIP1 := net.ParseIP(ip1)
+	ip2 := "1090.0.1.10"
+	tests := []struct {
+		name  string
+		ipStr string
+		expIP networking.IPAddress
+	}{
+		{
+			name:  "str-ip-valid",
+			ipStr: ip1,
+			expIP: networking.IPAddress(expIP1),
+		},
+		{
+			name:  "str-ip-invalid",
+			ipStr: ip2,
+			expIP: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actIP := ipStrToIPAddress(tt.ipStr)
+			if bytes.Compare(actIP, tt.expIP) != 0 {
+				t.Errorf("ipStrToIPAddress() got unexpected IPAddress %v, want %v", actIP, tt.expIP)
 			}
 		})
 	}
@@ -1882,7 +2247,7 @@ func getK8sNetworkPolicyObj() *networkingv1.NetworkPolicy {
 	return npObj
 }
 
-func getPod(name, ns, nodeName, podIP string) *v1.Pod {
+func getPod(name, ns, nodeName, podIP string, namedPort bool) *v1.Pod {
 	if name == "" {
 		name = "testPod"
 	}
@@ -1895,6 +2260,13 @@ func getPod(name, ns, nodeName, podIP string) *v1.Pod {
 	if podIP == "" {
 		podIP = "1.2.3.4"
 	}
+	ctrPort := v1.ContainerPort{
+		ContainerPort: 80,
+		Protocol:      "tcp",
+	}
+	if namedPort {
+		ctrPort.Name = "http"
+	}
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -1902,7 +2274,8 @@ func getPod(name, ns, nodeName, podIP string) *v1.Pod {
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{{
-				Name: "container-1",
+				Name:  "container-1",
+				Ports: []v1.ContainerPort{ctrPort},
 			}},
 			NodeName: nodeName,
 		},
@@ -1916,4 +2289,41 @@ func getPod(name, ns, nodeName, podIP string) *v1.Pod {
 			PodIP: podIP,
 		},
 	}
+}
+
+// compareIPBlocks is a util function to compare the contents of two IPBlocks.
+func compareIPBlocks(ipb1, ipb2 *networking.IPBlock) bool {
+	if ipb1 == nil && ipb2 == nil {
+		return true
+	}
+	if (ipb1 == nil && ipb2 != nil) || (ipb1 != nil && ipb2 == nil) {
+		return false
+	}
+	ipNet1 := (*ipb1).CIDR
+	ipNet2 := (*ipb2).CIDR
+	if !compareIPNet(ipNet1, ipNet2) {
+		return false
+	}
+	exc1 := (*ipb1).Except
+	exc2 := (*ipb2).Except
+	if len(exc1) != len(exc2) {
+		return false
+	}
+	for i := 0; i < len(exc1); i++ {
+		if !compareIPNet(exc1[i], exc2[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// compareIPNet is a util function to compare the contents of two IPNets.
+func compareIPNet(ipn1, ipn2 networking.IPNet) bool {
+	if bytes.Compare(ipn1.IP, ipn2.IP) != 0 {
+		return false
+	}
+	if ipn1.PrefixLength != ipn2.PrefixLength {
+		return false
+	}
+	return true
 }

@@ -16,6 +16,9 @@ include versioning.mk
 LDFLAGS += $(VERSION_LDFLAGS)
 
 UNAME_S := $(shell uname -s)
+USERID  := $(shell id -u)
+GRPID   := $(shell id -g)
+
 .PHONY: bin test-unit test-integration
 
 ifeq ($(UNAME_S),Linux)
@@ -28,16 +31,17 @@ bin:
 test-unit:
 	$(error Cannot use target 'test-unit' on a non-Linux OS, but you can run unit tests with 'docker-test-unit')
 test-integration:
-	$(error Cannot use target 'test-integration' on a non-Linux OS)
+	$(error Cannot use target 'test-integration' on a non-Linux OS, but you can run integration tests with 'docker-test-integration')
 endif
 
 .PHONY: build
 build: build-ubuntu
 
 .PHONY: test
-test: build
-test: test-unit
 test: test-fmt
+test: build
+test: docker-test-unit
+test: docker-test-integration
 
 $(DOCKER_CACHE):
 	@mkdir -p $@/gopath
@@ -64,6 +68,20 @@ docker-bin: $(DOCKER_CACHE)
 docker-test-unit: $(DOCKER_CACHE)
 	@$(DOCKER_ENV) make test-unit
 	@chmod -R 0755 $<
+
+.PHONY: docker-test-integration
+docker-test-integration:
+	@echo "===> Building Antrea Integration Test Docker image <==="
+	@docker build -t antrea/test -f build/images/test/Dockerfile .
+	@docker run --privileged --rm \
+		-e "GOCACHE=/tmp/gocache" \
+		-e "GOPATH=/tmp/gopath" \
+		-e "INCONTAINER=true" \
+		-w /usr/src/github.com/vmware-tanzu/antrea \
+		-v $(DOCKER_CACHE)/gopath:/tmp/gopath \
+		-v $(DOCKER_CACHE)/gocache:/tmp/gocache \
+		-v $(CURDIR):/usr/src/github.com/vmware-tanzu/antrea:ro \
+		antrea/test test-integration $(USERID) $(GRPID)
 
 .PHONY: docker-tidy
 docker-tidy: $(DOCKER_CACHE)
@@ -166,9 +184,10 @@ manifest:
 	@echo "===> Generating dev manifest for Antrea <==="
 	$(CURDIR)/hack/generate-manifest.sh --mode dev > build/yamls/antrea.yml
 	$(CURDIR)/hack/generate-manifest.sh --mode dev --ipsec > build/yamls/antrea-ipsec.yml
+	$(CURDIR)/hack/generate-manifest-octant.sh --mode dev > build/yamls/antrea-octant.yml
 
 .PHONY: octant-antrea-ubuntu
 octant-antrea-ubuntu:
 	@echo "===> Building antrea/octant-antrea-ubuntu Docker image <==="
 	docker build -t antrea/octant-antrea-ubuntu -f build/images/Dockerfile.octant.ubuntu .
-	docker tag antrea/octant-antrea-ubuntu octant-antrea-ubuntu:$(DOCKER_IMG_VERSION)
+	docker tag antrea/octant-antrea-ubuntu antrea/octant-antrea-ubuntu:$(DOCKER_IMG_VERSION)

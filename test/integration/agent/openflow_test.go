@@ -26,6 +26,7 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	config1 "github.com/vmware-tanzu/antrea/pkg/agent/config"
 	ofClient "github.com/vmware-tanzu/antrea/pkg/agent/openflow"
 	"github.com/vmware-tanzu/antrea/pkg/agent/types"
 	ofTestUtils "github.com/vmware-tanzu/antrea/test/integration/ovs"
@@ -135,7 +136,7 @@ func TestReplayFlowsNetworkPolicyFlows(t *testing.T) {
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 
-	_, err = c.Initialize(roundInfo)
+	_, err = c.Initialize(roundInfo, &config1.NodeConfig{}, config1.TrafficEncapModeEncap)
 	require.Nil(t, err, "Failed to initialize OFClient")
 
 	defer func() {
@@ -155,7 +156,6 @@ func TestReplayFlowsNetworkPolicyFlows(t *testing.T) {
 	npPort1 := &v1.NetworkPolicyPort{Protocol: &tcpProtocol, Port: &port2}
 	toIPList := prepareIPAddresses(toList)
 	rule := &types.PolicyRule{
-		ID:         ruleID,
 		Direction:  v1.PolicyTypeIngress,
 		From:       prepareIPAddresses(fromList),
 		ExceptFrom: prepareIPAddresses(exceptFromList),
@@ -163,7 +163,7 @@ func TestReplayFlowsNetworkPolicyFlows(t *testing.T) {
 		Service:    []*v1.NetworkPolicyPort{npPort1},
 	}
 
-	err = c.InstallPolicyRuleFlows(rule)
+	err = c.InstallPolicyRuleFlows(ruleID, rule)
 	require.Nil(t, err, "Failed to InstallPolicyRuleFlows")
 
 	err = c.AddPolicyRuleAddress(ruleID, types.SrcAddress, prepareIPNetAddresses([]string{"192.168.5.0/24", "192.169.1.0/24"}))
@@ -197,7 +197,7 @@ func testReplayFlows(t *testing.T) {
 }
 
 func testInitialize(t *testing.T, config *testConfig) {
-	if _, err := c.Initialize(roundInfo); err != nil {
+	if _, err := c.Initialize(roundInfo, &config1.NodeConfig{}, config1.TrafficEncapModeEncap); err != nil {
 		t.Errorf("Failed to initialize openflow client: %v", err)
 	}
 	for _, tableFlow := range prepareDefaultFlows() {
@@ -278,7 +278,7 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", br))
 
-	_, err = c.Initialize(roundInfo)
+	_, err = c.Initialize(roundInfo, &config1.NodeConfig{}, config1.TrafficEncapModeEncap)
 	require.Nil(t, err, "Failed to initialize OFClient")
 
 	defer func() {
@@ -298,7 +298,6 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	npPort1 := &v1.NetworkPolicyPort{Protocol: &tcpProtocol, Port: &port2}
 	toIPList := prepareIPAddresses(toList)
 	rule := &types.PolicyRule{
-		ID:         ruleID,
 		Direction:  v1.PolicyTypeIngress,
 		From:       prepareIPAddresses(fromList),
 		ExceptFrom: prepareIPAddresses(exceptFromList),
@@ -306,9 +305,9 @@ func TestNetworkPolicyFlows(t *testing.T) {
 		Service:    []*v1.NetworkPolicyPort{npPort1},
 	}
 
-	err = c.InstallPolicyRuleFlows(rule)
+	err = c.InstallPolicyRuleFlows(ruleID, rule)
 	require.Nil(t, err, "Failed to InstallPolicyRuleFlows")
-	checkConjunctionFlows(t, ingressRuleTable, ingressDefaultTable, contrackCommitTable, priorityNormal, rule, assert.True)
+	checkConjunctionFlows(t, ingressRuleTable, ingressDefaultTable, contrackCommitTable, priorityNormal, ruleID, rule, assert.True)
 	checkDefaultDropFlows(t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList, true)
 
 	addedFrom := prepareIPNetAddresses([]string{"192.168.5.0/24", "192.169.1.0/24"})
@@ -334,12 +333,11 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	udpProtocol := coreV1.ProtocolUDP
 	npPort2 := &v1.NetworkPolicyPort{Protocol: &udpProtocol, Port: &port3}
 	rule2 := &types.PolicyRule{
-		ID:        ruleID2,
 		Direction: v1.PolicyTypeIngress,
 		To:        toIPList2,
 		Service:   []*v1.NetworkPolicyPort{npPort2},
 	}
-	err = c.InstallPolicyRuleFlows(rule2)
+	err = c.InstallPolicyRuleFlows(ruleID2, rule2)
 	require.Nil(t, err, "Failed to InstallPolicyRuleFlows")
 
 	// Dump flows
@@ -357,7 +355,7 @@ func TestNetworkPolicyFlows(t *testing.T) {
 
 	err = c.UninstallPolicyRuleFlows(ruleID)
 	require.Nil(t, err, "Failed to DeletePolicyRuleService")
-	checkConjunctionFlows(t, ingressRuleTable, ingressDefaultTable, contrackCommitTable, priorityNormal, rule, assert.False)
+	checkConjunctionFlows(t, ingressRuleTable, ingressDefaultTable, contrackCommitTable, priorityNormal, ruleID, rule, assert.False)
 	checkDefaultDropFlows(t, ingressDefaultTable, priorityNormal, types.DstAddress, toIPList, false)
 }
 
@@ -449,12 +447,11 @@ func checkDeleteAddress(t *testing.T, ruleTable uint8, priority int, ruleID uint
 	}
 }
 
-func checkConjunctionFlows(t *testing.T, ruleTable uint8, dropTable uint8, allowTable uint8, priority int, rule *types.PolicyRule, testFunc func(t assert.TestingT, value bool, msgAndArgs ...interface{}) bool) {
-	ruleID := rule.ID
+func checkConjunctionFlows(t *testing.T, ruleTable uint8, dropTable uint8, allowTable uint8, priority int, ruleID uint32, rule *types.PolicyRule, testFunc func(t assert.TestingT, value bool, msgAndArgs ...interface{}) bool) {
 	flowList, err := ofTestUtils.OfctlDumpTableFlows(br, ruleTable)
 	require.Nil(t, err, "Failed to dump flows")
 
-	conjunctionActionMatch := fmt.Sprintf("priority=%d,conj_id=%d,ip", priority-10, rule.ID)
+	conjunctionActionMatch := fmt.Sprintf("priority=%d,conj_id=%d,ip", priority-10, ruleID)
 	flow := &ofTestUtils.ExpectFlow{MatchStr: conjunctionActionMatch, ActStr: fmt.Sprintf("resubmit(,%d)", allowTable)}
 	testFunc(t, ofTestUtils.OfctlFlowMatch(flowList, ruleTable, flow), "Failed to update conjunction action flow")
 

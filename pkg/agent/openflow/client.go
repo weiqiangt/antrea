@@ -20,6 +20,7 @@ import (
 
 	"k8s.io/klog"
 
+	"github.com/vmware-tanzu/antrea/pkg/agent/config"
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow/cookie"
 	"github.com/vmware-tanzu/antrea/pkg/agent/types"
 	binding "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
@@ -34,7 +35,7 @@ type Client interface {
 	// be called to ensure that the set of OVS flows is correct. All flows programmed in the
 	// switch which match the current round number will be deleted before any new flow is
 	// installed.
-	Initialize(roundInfo types.RoundInfo) (<-chan struct{}, error)
+	Initialize(roundInfo types.RoundInfo, config *config.NodeConfig, encapMode config.TrafficEncapModeType) (<-chan struct{}, error)
 
 	// InstallGatewayFlows sets up flows related to an OVS gateway port, the gateway must exist.
 	InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.HardwareAddr, gatewayOFPort uint32) error
@@ -48,8 +49,7 @@ type Client interface {
 	InstallDefaultTunnelFlows(tunnelOFPort uint32) error
 
 	// InstallNodeFlows should be invoked when a connection to a remote Node is going to be set
-	// up. The hostname is used to identify the added flows. When using the flow based tunnel,
-	// tunnelPeerIP must be provided, otherwise it should be set to nil.
+	// up. The hostname is used to identify the added flows.
 	// InstallNodeFlows has all-or-nothing semantics(call succeeds if all the flows are installed
 	// successfully, otherwise no flows will be installed). Calls to InstallNodeFlows are idempotent.
 	// Concurrent calls to InstallNodeFlows and / or UninstallNodeFlows are supported as long as they
@@ -79,7 +79,7 @@ type Client interface {
 	// NetworkPolicy rule. Each ingress/egress policy rule installs Openflow entries on two tables, one for
 	// ruleTable and the other for dropTable. If a packet does not pass the ruleTable, it will be dropped by the
 	// dropTable.
-	InstallPolicyRuleFlows(rule *types.PolicyRule) error
+	InstallPolicyRuleFlows(ruleID uint32, rule *types.PolicyRule) error
 
 	// UninstallPolicyRuleFlows removes the Openflow entry relevant to the specified NetworkPolicy rule.
 	// UninstallPolicyRuleFlows will do nothing if no Openflow entry for the rule is installed.
@@ -174,12 +174,15 @@ func (c *client) InstallNodeFlows(hostname string,
 ) error {
 	c.replayMutex.RLock()
 	defer c.replayMutex.RUnlock()
-	flows := make([]binding.Flow, 2, 3)
-	flows[0] = c.arpResponderFlow(peerGatewayIP, cookie.Node)
-	flows[1] = c.l3FwdFlowToRemote(localGatewayMAC, peerPodCIDR, tunnelPeerAddr, tunOFPort, cookie.Node)
-	if tunnelPeerAddr == nil {
-		// Not the default (flow based) tunnel. Add a separate tunnelClassifierFlow.
-		flows = append(flows, c.tunnelClassifierFlow(tunOFPort, cookie.Node))
+
+	flows := []binding.Flow{
+		c.arpResponderFlow(peerGatewayIP, cookie.Node),
+	}
+
+	if c.encapMode.NeedsEncapToPeer(tunnelPeerAddr, c.nodeConfig.NodeIPAddr) {
+		flows = append(flows, c.l3FwdFlowToRemote(localGatewayMAC, peerPodCIDR, tunnelPeerAddr, tunOFPort, cookie.Node))
+	} else {
+		flows = append(flows, c.l3FwdFlowToRemoteViaGw(localGatewayMAC, peerPodCIDR, cookie.Node))
 	}
 	return c.addFlows(c.nodeFlowCache, hostname, flows)
 }
@@ -198,7 +201,11 @@ func (c *client) InstallPodFlows(containerID string, podInterfaceIP net.IP, podI
 		c.podIPSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort, cookie.Pod),
 		c.arpSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort, cookie.Pod),
 		c.l2ForwardCalcFlow(podInterfaceMAC, ofPort, cookie.Pod),
-		c.l3FlowsToPod(gatewayMAC, podInterfaceIP, podInterfaceMAC, cookie.Pod),
+	}
+
+	// NoEncap mode has no tunnel.
+	if c.encapMode.SupportsEncap() {
+		flows = append(flows, c.l3FlowsToPod(gatewayMAC, podInterfaceIP, podInterfaceMAC, cookie.Pod))
 	}
 	return c.addFlows(c.podFlowCache, containerID, flows)
 }
@@ -224,10 +231,14 @@ func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.Hardware
 		c.gatewayIPSpoofGuardFlow(gatewayOFPort, cookie.Default),
 		c.gatewayARPSpoofGuardFlow(gatewayOFPort, gatewayAddr, gatewayMAC, cookie.Default),
 		c.ctRewriteDstMACFlow(gatewayMAC, cookie.Default),
-		c.l3ToGatewayFlow(gatewayAddr, gatewayMAC, cookie.Default),
 		c.l2ForwardCalcFlow(gatewayMAC, gatewayOFPort, cookie.Default),
 		c.localProbeFlow(gatewayAddr, cookie.Default),
 	}
+	// In NoEncap , no traffic from tunnel port
+	if c.encapMode.SupportsEncap() {
+		flows = append(flows, c.l3ToGatewayFlow(gatewayAddr, gatewayMAC, cookie.Default))
+	}
+
 	if err := c.flowOperations.AddAll(flows); err != nil {
 		return err
 	}
@@ -252,7 +263,7 @@ func (c *client) initialize() error {
 		return fmt.Errorf("failed to install arp normal flow: %v", err)
 	}
 	if err := c.flowOperations.Add(c.l2ForwardOutputFlow(cookie.Default)); err != nil {
-		return fmt.Errorf("failed to install l2 forward output flows: %v", err)
+		return fmt.Errorf("failed to install L2 forward output flows: %v", err)
 	}
 	if err := c.flowOperations.AddAll(c.connectionTrackFlows(cookie.Default)); err != nil {
 		return fmt.Errorf("failed to install connection track flows: %v", err)
@@ -260,10 +271,18 @@ func (c *client) initialize() error {
 	if err := c.flowOperations.AddAll(c.establishedConnectionFlows(cookie.Default)); err != nil {
 		return fmt.Errorf("failed to install flows to skip established connections: %v", err)
 	}
+
+	if c.encapMode.SupportsNoEncap() {
+		if err := c.flowOperations.Add(c.l2ForwardOutputInPortFlow(config.HostGatewayOFPort, cookie.Default)); err != nil {
+			return fmt.Errorf("failed to install L2 forward same in-port and out-port flow: %v", err)
+		}
+	}
 	return nil
 }
 
-func (c *client) Initialize(roundInfo types.RoundInfo) (<-chan struct{}, error) {
+func (c *client) Initialize(roundInfo types.RoundInfo, config *config.NodeConfig, encapMode config.TrafficEncapModeType) (<-chan struct{}, error) {
+	c.nodeConfig = config
+	c.encapMode = encapMode
 	// Initiate connections to target OFswitch, and create tables on the switch.
 	connCh := make(chan struct{})
 	if err := c.bridge.Connect(maxRetryForOFSwitch, connCh); err != nil {

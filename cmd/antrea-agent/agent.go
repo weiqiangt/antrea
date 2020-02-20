@@ -16,6 +16,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"time"
 
 	"k8s.io/client-go/informers"
@@ -24,10 +25,13 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/agent"
 	"github.com/vmware-tanzu/antrea/pkg/agent/cniserver"
 	_ "github.com/vmware-tanzu/antrea/pkg/agent/cniserver/ipam"
+	"github.com/vmware-tanzu/antrea/pkg/agent/config"
 	"github.com/vmware-tanzu/antrea/pkg/agent/controller/networkpolicy"
 	"github.com/vmware-tanzu/antrea/pkg/agent/controller/noderoute"
 	"github.com/vmware-tanzu/antrea/pkg/agent/interfacestore"
+	"github.com/vmware-tanzu/antrea/pkg/agent/iptables"
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
+	"github.com/vmware-tanzu/antrea/pkg/agent/route"
 	"github.com/vmware-tanzu/antrea/pkg/antctl"
 	"github.com/vmware-tanzu/antrea/pkg/apis/networking/v1beta1"
 	"github.com/vmware-tanzu/antrea/pkg/k8s"
@@ -37,9 +41,10 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/version"
 )
 
-// Determine how often we go through reconciliation (between current and desired state)
-// Same as in https://github.com/kubernetes/sample-controller/blob/master/main.go
-const informerDefaultResync time.Duration = 30 * time.Second
+// informerDefaultResync is the default resync period if a handler doesn't specify one.
+// Use the same default value as kube-controller-manager:
+// https://github.com/kubernetes/kubernetes/blob/release-1.17/pkg/controller/apis/config/v1alpha1/defaults.go#L120
+const informerDefaultResync = 12 * time.Hour
 
 // run starts Antrea agent with the given options and waits for termination signal.
 func run(o *Options) error {
@@ -66,24 +71,33 @@ func run(o *Options) error {
 	defer ovsdbConnection.Close()
 
 	ovsBridgeClient := ovsconfig.NewOVSBridge(o.config.OVSBridge, o.config.OVSDatapathType, ovsdbConnection)
-
 	ofClient := openflow.NewClient(o.config.OVSBridge)
+
+	_, serviceCIDRNet, _ := net.ParseCIDR(o.config.ServiceCIDR)
+	_, encapMode := config.GetTrafficEncapModeFromStr(o.config.TrafficEncapMode)
+	networkConfig := &config.NetworkConfig{
+		TunnelType:        ovsconfig.TunnelType(o.config.TunnelType),
+		TrafficEncapMode:  encapMode,
+		EnableIPSecTunnel: o.config.EnableIPSecTunnel}
+
+	routeClient := route.NewClient(encapMode)
+	iptablesClient := iptables.NewClient(o.config.HostGateway, serviceCIDRNet, encapMode)
 
 	// Create an ifaceStore that caches network interfaces managed by this node.
 	ifaceStore := interfacestore.NewInterfaceStore()
 
 	// Initialize agent and node network.
 	agentInitializer := agent.NewInitializer(
+		k8sClient,
 		ovsBridgeClient,
 		ofClient,
-		k8sClient,
+		routeClient,
+		iptablesClient,
 		ifaceStore,
-		o.config.OVSBridge,
-		o.config.ServiceCIDR,
 		o.config.HostGateway,
 		o.config.DefaultMTU,
-		ovsconfig.TunnelType(o.config.TunnelType),
-		o.config.EnableIPSecTunnel)
+		serviceCIDRNet,
+		networkConfig)
 	err = agentInitializer.Initialize()
 	if err != nil {
 		return fmt.Errorf("error initializing agent: %v", err)
@@ -100,10 +114,11 @@ func run(o *Options) error {
 		informerFactory,
 		ofClient,
 		ovsBridgeClient,
+		routeClient,
+		iptablesClient,
 		ifaceStore,
-		nodeConfig,
-		ovsconfig.TunnelType(o.config.TunnelType),
-		agentInitializer.GetIPSecPSK())
+		networkConfig,
+		nodeConfig)
 
 	// podUpdates is a channel for receiving Pod updates from CNIServer and
 	// notifying NetworkPolicyController to reconcile rules related to the
@@ -140,7 +155,15 @@ func run(o *Options) error {
 
 	go networkPolicyController.Run(stopCh)
 
-	agentMonitor := monitor.NewAgentMonitor(crdClient, o.config.OVSBridge, nodeConfig.Name, nodeConfig.PodCIDR.String(), ifaceStore, ofClient, ovsBridgeClient, networkPolicyController)
+	agentMonitor := monitor.NewAgentMonitor(
+		crdClient,
+		o.config.OVSBridge,
+		nodeConfig.Name,
+		nodeConfig.PodCIDR.String(),
+		ifaceStore,
+		ofClient,
+		ovsBridgeClient,
+		networkPolicyController)
 
 	go agentMonitor.Run(stopCh)
 

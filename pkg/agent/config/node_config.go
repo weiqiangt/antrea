@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package types
+package config
 
 import (
+	"fmt"
 	"net"
+
+	"github.com/vmware-tanzu/antrea/pkg/ovs/ovsconfig"
 )
 
 const (
@@ -27,12 +30,30 @@ const (
 type GatewayConfig struct {
 	IP   net.IP
 	MAC  net.HardwareAddr
-	Name string
+	Link string
 }
 
+func (g *GatewayConfig) String() string {
+	return fmt.Sprintf("Name %s: IP %s, MAC %s", g.Link, g.IP, g.MAC)
+}
+
+// Local Node configurations retrieved from K8s API or host networking state.
 type NodeConfig struct {
-	Bridge  string
-	Name    string
-	PodCIDR *net.IPNet
-	*GatewayConfig
+	Name          string
+	PodCIDR       *net.IPNet
+	NodeIPAddr    *net.IPNet
+	GatewayConfig *GatewayConfig
+}
+
+func (n *NodeConfig) String() string {
+	return fmt.Sprintf("NodeName: %s, PodCIDR: %s, NodeIP: %s, Gateway: %s",
+		n.Name, n.PodCIDR, n.NodeIPAddr, n.GatewayConfig)
+}
+
+// User provided network configuration parameters.
+type NetworkConfig struct {
+	TrafficEncapMode  TrafficEncapModeType
+	TunnelType        ovsconfig.TunnelType
+	EnableIPSecTunnel bool
+	IPSecPSK          string
 }

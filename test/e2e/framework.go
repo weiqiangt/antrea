@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 
+	"github.com/vmware-tanzu/antrea/pkg/agent/config"
 	"github.com/vmware-tanzu/antrea/test/e2e/providers"
 )
 
@@ -406,16 +407,30 @@ func (data *TestData) deleteAntrea(timeout time.Duration) error {
 	return err
 }
 
+// getImageName gets the image name from the fully qualified URI.
+// For example: "gcr.io/kubernetes-e2e-test-images/agnhost:2.8" gets "agnhost".
+func getImageName(uri string) string {
+	registryAndImage := strings.Split(uri, ":")[0]
+	paths := strings.Split(registryAndImage, "/")
+	return paths[len(paths)-1]
+}
+
 // createPodOnNode creates a pod in the test namespace with a container whose type is decided by imageName.
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
-func (data *TestData) createPodOnNode(name string, nodeName string, imageName string, command []string) error {
+func (data *TestData) createPodOnNode(name string, nodeName string, image string, command []string, args []string, env []v1.EnvVar, ports []v1.ContainerPort) error {
+	// image could be a fully qualified URI which can't be used as container name and label value,
+	// extract the image name from it.
+	imageName := getImageName(image)
 	podSpec := v1.PodSpec{
 		Containers: []v1.Container{
 			{
 				Name:            imageName,
-				Image:           imageName,
+				Image:           image,
 				ImagePullPolicy: v1.PullIfNotPresent,
 				Command:         command,
+				Args:            args,
+				Env:             env,
+				Ports:           ports,
 			},
 		},
 		RestartPolicy: v1.RestartPolicyNever,
@@ -454,7 +469,7 @@ func (data *TestData) createPodOnNode(name string, nodeName string, imageName st
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 func (data *TestData) createBusyboxPodOnNode(name string, nodeName string) error {
 	sleepDuration := 3600 // seconds
-	return data.createPodOnNode(name, nodeName, "busybox", []string{"sleep", strconv.Itoa(sleepDuration)})
+	return data.createPodOnNode(name, nodeName, "busybox", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil)
 }
 
 // createBusyboxPod creates a Pod in the test namespace with a single busybox container.
@@ -465,12 +480,22 @@ func (data *TestData) createBusyboxPod(name string) error {
 // createNginxPodOnNode creates a Pod in the test namespace with a single nginx container. The
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
 func (data *TestData) createNginxPodOnNode(name string, nodeName string) error {
-	return data.createPodOnNode(name, nodeName, "nginx", []string{})
+	return data.createPodOnNode(name, nodeName, "nginx", []string{}, nil, nil, nil)
 }
 
 // createNginxPod creates a Pod in the test namespace with a single nginx container.
 func (data *TestData) createNginxPod(name string) error {
 	return data.createNginxPodOnNode(name, "")
+}
+
+// createServerPod creates a Pod that can listen to specified port and have named port set.
+func (data *TestData) createServerPod(name string, portName string, portNum int) error {
+	// See https://github.com/kubernetes/kubernetes/blob/master/test/images/agnhost/porter/porter.go#L17 for the image's detail.
+	image := "gcr.io/kubernetes-e2e-test-images/agnhost:2.8"
+	cmd := "porter"
+	env := v1.EnvVar{Name: fmt.Sprintf("SERVE_PORT_%d", portNum), Value: "foo"}
+	port := v1.ContainerPort{Name: portName, ContainerPort: int32(portNum)}
+	return data.createPodOnNode(name, "", image, nil, []string{cmd}, []v1.EnvVar{env}, []v1.ContainerPort{port})
 }
 
 // deletePod deletes a Pod in the test namespace.
@@ -817,13 +842,13 @@ func (data *TestData) runPingCommandFromTestPod(podName string, targetIP string,
 	return err
 }
 
-func (data *TestData) runNetcatCommandFromTestPod(podName string, svcName string) error {
-	// Retrying several times to avoid flakes as the test involves DNS (coredns) and Service/Endpoints (kube-proxy).
+func (data *TestData) runNetcatCommandFromTestPod(podName string, server string, port int) error {
+	// Retrying several times to avoid flakes as the test may involve DNS (coredns) and Service/Endpoints (kube-proxy).
 	cmd := []string{
 		"/bin/sh",
 		"-c",
-		fmt.Sprintf("for i in $(seq 1 5); do nc -vz -w 4 %s.%s %d && exit 0 || sleep 1; done; exit 1",
-			svcName, testNamespace, 80),
+		fmt.Sprintf("for i in $(seq 1 5); do nc -vz -w 4 %s %d && exit 0 || sleep 1; done; exit 1",
+			server, port),
 	}
 	stdout, stderr, err := data.runCommandFromPod(testNamespace, podName, busyboxContainerName, cmd)
 	if err == nil {
@@ -841,4 +866,29 @@ func (data *TestData) doesOVSPortExist(antreaPodName string, portName string) (b
 		return false, nil
 	}
 	return false, fmt.Errorf("error when running ovs-vsctl command on Pod '%s': %v", antreaPodName, err)
+}
+
+func (data *TestData) GetEncapMode() (config.TrafficEncapModeType, error) {
+	mapList, err := data.clientset.CoreV1().ConfigMaps("kube-system").List(metav1.ListOptions{})
+	if err != nil {
+		return config.TrafficEncapModeInvalid, err
+	}
+	for _, m := range mapList.Items {
+		if strings.HasPrefix(m.Name, "antrea-config") {
+			configMap, err := data.clientset.CoreV1().ConfigMaps("kube-system").Get(m.Name, metav1.GetOptions{})
+			if err != nil {
+				return config.TrafficEncapModeInvalid, err
+			}
+			for _, antreaConfig := range configMap.Data {
+				for _, mode := range config.GetTrafficEncapModes() {
+					searchStr := fmt.Sprintf("trafficEncapMode: %s", mode)
+					if strings.Index(strings.ToLower(antreaConfig), strings.ToLower(searchStr)) != -1 {
+						return mode, nil
+					}
+				}
+			}
+			return config.TrafficEncapModeEncap, nil
+		}
+	}
+	return config.TrafficEncapModeInvalid, fmt.Errorf("antrea-conf config map is not found")
 }

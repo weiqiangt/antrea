@@ -21,6 +21,7 @@ package testing
 
 import (
 	gomock "github.com/golang/mock/gomock"
+	config "github.com/vmware-tanzu/antrea/pkg/agent/config"
 	types "github.com/vmware-tanzu/antrea/pkg/agent/types"
 	openflow "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
 	net "net"
@@ -121,18 +122,18 @@ func (mr *MockClientMockRecorder) GetFlowTableStatus() *gomock.Call {
 }
 
 // Initialize mocks base method
-func (m *MockClient) Initialize(arg0 types.RoundInfo) (<-chan struct{}, error) {
+func (m *MockClient) Initialize(arg0 types.RoundInfo, arg1 *config.NodeConfig, arg2 config.TrafficEncapModeType) (<-chan struct{}, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Initialize", arg0)
+	ret := m.ctrl.Call(m, "Initialize", arg0, arg1, arg2)
 	ret0, _ := ret[0].(<-chan struct{})
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Initialize indicates an expected call of Initialize
-func (mr *MockClientMockRecorder) Initialize(arg0 interface{}) *gomock.Call {
+func (mr *MockClientMockRecorder) Initialize(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Initialize", reflect.TypeOf((*MockClient)(nil).Initialize), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Initialize", reflect.TypeOf((*MockClient)(nil).Initialize), arg0, arg1, arg2)
 }
 
 // InstallClusterServiceCIDRFlows mocks base method
@@ -206,17 +207,17 @@ func (mr *MockClientMockRecorder) InstallPodFlows(arg0, arg1, arg2, arg3, arg4 i
 }
 
 // InstallPolicyRuleFlows mocks base method
-func (m *MockClient) InstallPolicyRuleFlows(arg0 *types.PolicyRule) error {
+func (m *MockClient) InstallPolicyRuleFlows(arg0 uint32, arg1 *types.PolicyRule) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InstallPolicyRuleFlows", arg0)
+	ret := m.ctrl.Call(m, "InstallPolicyRuleFlows", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // InstallPolicyRuleFlows indicates an expected call of InstallPolicyRuleFlows
-func (mr *MockClientMockRecorder) InstallPolicyRuleFlows(arg0 interface{}) *gomock.Call {
+func (mr *MockClientMockRecorder) InstallPolicyRuleFlows(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallPolicyRuleFlows", reflect.TypeOf((*MockClient)(nil).InstallPolicyRuleFlows), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallPolicyRuleFlows", reflect.TypeOf((*MockClient)(nil).InstallPolicyRuleFlows), arg0, arg1)
 }
 
 // IsConnected mocks base method
