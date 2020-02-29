@@ -128,47 +128,47 @@ func (c *client) IsConnected() bool {
 	return c.bridge.IsConnected()
 }
 
-// addFlows installs the flows on the OVS bridge and then add them into the flow cache. If the flow cache exists,
+// addEntries installs the flows on the OVS bridge and then add them into the flow cache. If the flow cache exists,
 // it will return immediately, otherwise it will use Bundle to add all flows, and then add them into the flow cache.
 // If it fails to add the flows with Bundle, it will return the error and no flow cache is created.
-func (c *client) addFlows(cache *flowCategoryCache, flowCacheKey string, flows []binding.Flow) error {
-	_, ok := cache.Load(flowCacheKey)
-	// If a flow cache entry already exists for the key, return immediately. Otherwise, add the flows to the switch
+func (c *client) addEntries(cache *entryCategoryCache, cacheKey string, entries []binding.Entry) error {
+	_, ok := cache.Load(cacheKey)
+	// If a entry cache entry already exists for the key, return immediately. Otherwise, add the entries to the switch
 	// and populate the cache with them.
 	if ok {
-		klog.V(2).Infof("Flows with cache key %s are already installed", flowCacheKey)
+		klog.V(2).Infof("Flows with cache key %s are already installed", cacheKey)
 		return nil
 	}
-	err := c.flowOperations.AddAll(flows)
+	err := c.operations.AddAll(entries)
 	if err != nil {
 		return err
 	}
-	fCache := flowCache{}
-	// Add the successfully installed flows into the flow cache.
-	for _, flow := range flows {
-		fCache[flow.MatchString()] = flow
+	eCache := entryCache{}
+	// Add the successfully installed entries into the entry cache.
+	for _, entry := range entries {
+		eCache[entry.KeyString()] = entry
 	}
-	cache.Store(flowCacheKey, fCache)
+	cache.Store(cacheKey, eCache)
 	return nil
 }
 
-// deleteFlows deletes all the flows in the flow cache indexed by the provided flowCacheKey.
-func (c *client) deleteFlows(cache *flowCategoryCache, flowCacheKey string) error {
-	fCacheI, ok := cache.Load(flowCacheKey)
+// deleteEntries deletes all the flows in the flow cache indexed by the provided flowCacheKey.
+func (c *client) deleteEntries(cache *entryCategoryCache, cacheKey string) error {
+	eCacheI, ok := cache.Load(cacheKey)
 	if !ok {
 		// no matching flows found in the cache
 		return nil
 	}
-	fCache := fCacheI.(flowCache)
+	eCache := eCacheI.(entryCache)
 	// Delete flows from OVS.
-	delFlows := []binding.Flow{}
-	for _, flow := range fCache {
-		delFlows = append(delFlows, flow)
+	var delEntries []binding.Entry
+	for _, entry := range eCache {
+		delEntries = append(delEntries, entry)
 	}
-	if err := c.flowOperations.DeleteAll(delFlows); err != nil {
+	if err := c.operations.DeleteAll(delEntries); err != nil {
 		return err
 	}
-	cache.Delete(flowCacheKey)
+	cache.Delete(cacheKey)
 	return nil
 }
 
@@ -180,7 +180,7 @@ func (c *client) InstallNodeFlows(hostname string,
 	c.replayMutex.RLock()
 	defer c.replayMutex.RUnlock()
 
-	flows := []binding.Flow{
+	flows := []binding.Entry{
 		c.arpResponderFlow(peerGatewayIP, cookie.Node),
 	}
 	if c.encapMode.NeedsEncapToPeer(tunnelPeerIP, c.nodeConfig.NodeIPAddr) {
@@ -195,19 +195,19 @@ func (c *client) InstallNodeFlows(hostname string,
 		flows = append(flows, c.tunnelClassifierFlow(ipsecTunOFPort, cookie.Node))
 	}
 
-	return c.addFlows(c.nodeFlowCache, hostname, flows)
+	return c.addEntries(c.nodeFlowCache, hostname, flows)
 }
 
 func (c *client) UninstallNodeFlows(hostname string) error {
 	c.replayMutex.RLock()
 	defer c.replayMutex.RUnlock()
-	return c.deleteFlows(c.nodeFlowCache, hostname)
+	return c.deleteEntries(c.nodeFlowCache, hostname)
 }
 
 func (c *client) InstallPodFlows(containerID string, podInterfaceIP net.IP, podInterfaceMAC, gatewayMAC net.HardwareAddr, ofPort uint32) error {
 	c.replayMutex.RLock()
 	defer c.replayMutex.RUnlock()
-	flows := []binding.Flow{
+	flows := []binding.Entry{
 		c.podClassifierFlow(ofPort, cookie.Pod),
 		c.podIPSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort, cookie.Pod),
 		c.arpSpoofGuardFlow(podInterfaceIP, podInterfaceMAC, ofPort, cookie.Pod),
@@ -218,26 +218,26 @@ func (c *client) InstallPodFlows(containerID string, podInterfaceIP net.IP, podI
 	if c.encapMode.SupportsEncap() {
 		flows = append(flows, c.l3FlowsToPod(gatewayMAC, podInterfaceIP, podInterfaceMAC, cookie.Pod))
 	}
-	return c.addFlows(c.podFlowCache, containerID, flows)
+	return c.addEntries(c.podFlowCache, containerID, flows)
 }
 
 func (c *client) UninstallPodFlows(containerID string) error {
 	c.replayMutex.RLock()
 	defer c.replayMutex.RUnlock()
-	return c.deleteFlows(c.podFlowCache, containerID)
+	return c.deleteEntries(c.podFlowCache, containerID)
 }
 
 func (c *client) InstallClusterServiceCIDRFlows(serviceNet *net.IPNet, gatewayOFPort uint32) error {
 	flow := c.serviceCIDRDNATFlow(serviceNet, gatewayOFPort, cookie.Service)
-	if err := c.flowOperations.Add(flow); err != nil {
+	if err := c.operations.Add(flow); err != nil {
 		return err
 	}
-	c.clusterServiceCIDRFlows = []binding.Flow{flow}
+	c.clusterServiceCIDRFlows = []binding.Entry{flow}
 	return nil
 }
 
 func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.HardwareAddr, gatewayOFPort uint32) error {
-	flows := []binding.Flow{
+	flows := []binding.Entry{
 		c.gatewayClassifierFlow(gatewayOFPort, cookie.Default),
 		c.gatewayIPSpoofGuardFlow(gatewayOFPort, cookie.Default),
 		c.gatewayARPSpoofGuardFlow(gatewayOFPort, gatewayAddr, gatewayMAC, cookie.Default),
@@ -250,7 +250,7 @@ func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.Hardware
 		flows = append(flows, c.l3ToGatewayFlow(gatewayAddr, gatewayMAC, cookie.Default))
 	}
 
-	if err := c.flowOperations.AddAll(flows); err != nil {
+	if err := c.operations.AddAll(flows); err != nil {
 		return err
 	}
 	c.gatewayFlows = flows
@@ -259,32 +259,44 @@ func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.Hardware
 
 func (c *client) InstallDefaultTunnelFlows(tunnelOFPort uint32) error {
 	flow := c.tunnelClassifierFlow(tunnelOFPort, cookie.Default)
-	if err := c.flowOperations.Add(flow); err != nil {
+	if err := c.operations.Add(flow); err != nil {
 		return err
 	}
-	c.defaultTunnelFlows = []binding.Flow{flow}
+	c.defaultTunnelFlows = []binding.Entry{flow}
 	return nil
 }
 
 func (c *client) initialize() error {
-	if err := c.flowOperations.AddAll(c.defaultFlows()); err != nil {
+	var entries []binding.Entry
+	for _, flow := range c.defaultFlows() {
+		entries = append(entries, flow)
+	}
+	if err := c.operations.AddAll(entries); err != nil {
 		return fmt.Errorf("failed to install default flows: %v", err)
 	}
-	if err := c.flowOperations.Add(c.arpNormalFlow(cookie.Default)); err != nil {
+	if err := c.operations.Add(c.arpNormalFlow(cookie.Default)); err != nil {
 		return fmt.Errorf("failed to install arp normal flow: %v", err)
 	}
-	if err := c.flowOperations.Add(c.l2ForwardOutputFlow(cookie.Default)); err != nil {
+	if err := c.operations.Add(c.l2ForwardOutputFlow(cookie.Default)); err != nil {
 		return fmt.Errorf("failed to install L2 forward output flows: %v", err)
 	}
-	if err := c.flowOperations.AddAll(c.connectionTrackFlows(cookie.Default)); err != nil {
+	entries = []binding.Entry{}
+	for _, flow := range c.connectionTrackFlows(cookie.Default) {
+		entries = append(entries, flow)
+	}
+	if err := c.operations.AddAll(entries); err != nil {
 		return fmt.Errorf("failed to install connection track flows: %v", err)
 	}
-	if err := c.flowOperations.AddAll(c.establishedConnectionFlows(cookie.Default)); err != nil {
+	entries = []binding.Entry{}
+	for _, flow := range c.establishedConnectionFlows(cookie.Default) {
+		entries = append(entries, flow)
+	}
+	if err := c.operations.AddAll(entries); err != nil {
 		return fmt.Errorf("failed to install flows to skip established connections: %v", err)
 	}
 
 	if c.encapMode.SupportsNoEncap() {
-		if err := c.flowOperations.Add(c.l2ForwardOutputInPortFlow(config.HostGatewayOFPort, cookie.Default)); err != nil {
+		if err := c.operations.Add(c.l2ForwardOutputInPortFlow(config.HostGatewayOFPort, cookie.Default)); err != nil {
 			return fmt.Errorf("failed to install L2 forward same in-port and out-port flow: %v", err)
 		}
 	}
@@ -325,11 +337,11 @@ func (c *client) ReplayFlows() {
 		klog.Errorf("Error during flow replay: %v", err)
 	}
 
-	addFixedFlows := func(flows []binding.Flow) {
-		for _, flow := range flows {
+	addFixedFlows := func(entries []binding.Entry) {
+		for _, flow := range entries {
 			flow.Reset()
 		}
-		if err := c.flowOperations.AddAll(flows); err != nil {
+		if err := c.operations.AddAll(entries); err != nil {
 			klog.Errorf("Error when replaying fixed flows: %v", err)
 		}
 
@@ -340,15 +352,15 @@ func (c *client) ReplayFlows() {
 	addFixedFlows(c.defaultTunnelFlows)
 
 	installCachedFlows := func(key, value interface{}) bool {
-		fCache := value.(flowCache)
-		cachedFlows := make([]binding.Flow, 0)
+		fCache := value.(entryCache)
+		cachedFlows := make([]binding.Entry, 0)
 
 		for _, flow := range fCache {
 			flow.Reset()
 			cachedFlows = append(cachedFlows, flow)
 		}
 
-		if err := c.flowOperations.AddAll(cachedFlows); err != nil {
+		if err := c.operations.AddAll(cachedFlows); err != nil {
 			klog.Errorf("Error when replaying cached flows: %v", err)
 		}
 		return true

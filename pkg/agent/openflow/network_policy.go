@@ -442,7 +442,7 @@ type policyRuleConjunction struct {
 	fromClause    *clause
 	toClause      *clause
 	serviceClause *clause
-	actionFlows   []binding.Flow
+	actionFlows   []binding.Entry
 }
 
 // clause groups conjunctive match flows. Matches in a clause represent source addresses(for fromClause), or destination
@@ -715,7 +715,7 @@ func (c *client) InstallPolicyRuleFlows(ruleID uint32, rule *types.PolicyRule) e
 	// but the default drop flow is installed.
 	if nClause > 1 {
 		// Install action flows.
-		var actionFlows = []binding.Flow{
+		var actionFlows = []binding.Entry{
 			c.conjunctionActionFlow(ruleID, ruleTable.GetID(), dropTable.GetNext()),
 		}
 		if rule.ExceptFrom != nil {
@@ -730,7 +730,7 @@ func (c *client) InstallPolicyRuleFlows(ruleID uint32, rule *types.PolicyRule) e
 				actionFlows = append(actionFlows, flow)
 			}
 		}
-		if err := c.flowOperations.AddAll(actionFlows); err != nil {
+		if err := c.operations.AddAll(actionFlows); err != nil {
 			return nil
 		}
 		// Add the action flows after the Openflow entries are installed on the OVS bridge successfully.
@@ -766,7 +766,7 @@ func (c *client) applyConjunctiveMatchFlows(flowChanges []*conjMatchFlowContextC
 
 // sendConjunctiveMatchFlows sends all the changed OpenFlow entries to the OVS bridge in a single Bundle.
 func (c *client) sendConjunctiveMatchFlows(changes []*conjMatchFlowContextChange) error {
-	var addFlows, modifyFlows, deleteFlows []binding.Flow
+	var addFlows, modifyFlows, deleteFlows []binding.Entry
 	var flowChanges []*flowChange
 	for _, flowChange := range changes {
 		if flowChange.matchFlow != nil {
@@ -787,7 +787,7 @@ func (c *client) sendConjunctiveMatchFlows(changes []*conjMatchFlowContextChange
 			deleteFlows = append(deleteFlows, fc.flow)
 		}
 	}
-	return c.bridge.AddFlowsInBundle(addFlows, modifyFlows, deleteFlows)
+	return c.bridge.AddEntriesInBundle(addFlows, modifyFlows, deleteFlows)
 }
 
 func (c *policyRuleConjunction) newClause(clauseID uint8, nClause uint8, ruleTable, dropTable binding.Table) *clause {
@@ -909,7 +909,7 @@ func (c *client) UninstallPolicyRuleFlows(ruleID uint32) error {
 	}
 
 	// Delete action flows from the OVS bridge.
-	if err := c.flowOperations.DeleteAll(conj.actionFlows); err != nil {
+	if err := c.operations.DeleteAll(conj.actionFlows); err != nil {
 		return err
 	}
 
@@ -928,7 +928,7 @@ func (c *client) UninstallPolicyRuleFlows(ruleID uint32) error {
 }
 
 func (c *client) replayPolicyFlows() {
-	var flows []binding.Flow
+	var flows []binding.Entry
 	addActionFlows := func(conj *policyRuleConjunction) {
 		for _, flow := range conj.actionFlows {
 			flow.Reset()
@@ -955,7 +955,7 @@ func (c *client) replayPolicyFlows() {
 	for _, ctx := range c.globalConjMatchFlowCache {
 		addMatchFlows(ctx)
 	}
-	if err := c.flowOperations.AddAll(flows); err != nil {
+	if err := c.operations.AddAll(flows); err != nil {
 		klog.Errorf("Error when replaying flows: %v", err)
 	}
 }

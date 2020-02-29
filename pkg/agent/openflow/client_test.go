@@ -41,9 +41,9 @@ func installNodeFlows(ofClient Client, cacheKey string) (int, error) {
 	peerNodeIP := net.ParseIP("192.168.1.1")
 	err := ofClient.InstallNodeFlows(hostName, gwMAC, *IPNet, gwIP, peerNodeIP, config.DefaultTunOFPort, 0)
 	client := ofClient.(*client)
-	fCacheI, ok := client.nodeFlowCache.Load(hostName)
+	eCacheI, ok := client.nodeFlowCache.Load(hostName)
 	if ok {
-		return len(fCacheI.(flowCache)), err
+		return len(eCacheI.(entryCache)), err
 	} else {
 		return 0, err
 	}
@@ -57,9 +57,9 @@ func installPodFlows(ofClient Client, cacheKey string) (int, error) {
 	ofPort := uint32(10)
 	err := ofClient.InstallPodFlows(containerID, podIP, podMAC, gwMAC, ofPort)
 	client := ofClient.(*client)
-	fCacheI, ok := client.podFlowCache.Load(containerID)
+	eCacheI, ok := client.podFlowCache.Load(containerID)
 	if ok {
-		return len(fCacheI.(flowCache)), err
+		return len(eCacheI.(entryCache)), err
 	} else {
 		return 0, err
 	}
@@ -83,12 +83,12 @@ func TestIdempotentFlowInstallation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			m := oftest.NewMockFlowOperations(ctrl)
+			m := oftest.NewMockEntryOperations(ctrl)
 			ofClient := NewClient(bridgeName)
 			client := ofClient.(*client)
 			client.cookieAllocator = cookie.NewAllocator(0)
 			client.nodeConfig = &config.NodeConfig{}
-			client.flowOperations = m
+			client.operations = m
 
 			m.EXPECT().AddAll(gomock.Any()).Return(nil).Times(1)
 			// Installing the flows should succeed, and all the flows should be added into the cache.
@@ -111,12 +111,12 @@ func TestIdempotentFlowInstallation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			m := oftest.NewMockFlowOperations(ctrl)
+			m := oftest.NewMockEntryOperations(ctrl)
 			ofClient := NewClient(bridgeName)
 			client := ofClient.(*client)
 			client.cookieAllocator = cookie.NewAllocator(0)
 			client.nodeConfig = &config.NodeConfig{}
-			client.flowOperations = m
+			client.operations = m
 
 			errorCall := m.EXPECT().AddAll(gomock.Any()).Return(errors.New("Bundle error")).Times(1)
 			m.EXPECT().AddAll(gomock.Any()).Return(nil).After(errorCall)
@@ -152,12 +152,12 @@ func TestFlowInstallationFailed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			m := oftest.NewMockFlowOperations(ctrl)
+			m := oftest.NewMockEntryOperations(ctrl)
 			ofClient := NewClient(bridgeName)
 			client := ofClient.(*client)
 			client.cookieAllocator = cookie.NewAllocator(0)
 			client.nodeConfig = &config.NodeConfig{}
-			client.flowOperations = m
+			client.operations = m
 
 			// We generate an error for AddAll call.
 			m.EXPECT().AddAll(gomock.Any()).Return(errors.New("Bundle error"))
@@ -186,12 +186,12 @@ func TestConcurrentFlowInstallation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
-			m := oftest.NewMockFlowOperations(ctrl)
+			m := oftest.NewMockEntryOperations(ctrl)
 			ofClient := NewClient(bridgeName)
 			client := ofClient.(*client)
 			client.cookieAllocator = cookie.NewAllocator(0)
 			client.nodeConfig = &config.NodeConfig{}
-			client.flowOperations = m
+			client.operations = m
 
 			var concurrentCalls atomic.Value // set to true if we observe concurrent calls
 			timeoutCh := make(chan struct{})

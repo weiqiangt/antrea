@@ -21,6 +21,7 @@ import (
 
 type protocol = string
 type TableIDType uint8
+type GroupIDType = uint32
 
 const LastTableID TableIDType = 0xff
 
@@ -60,15 +61,18 @@ const (
 type Bridge interface {
 	CreateTable(id, next TableIDType, missAction MissActionType) Table
 	DeleteTable(id TableIDType) bool
+	// BuildGroup creates a select type group with specified ID on this bridge.
+	BuildGroup(id GroupIDType) Group
+	// Conn
 	DumpTableStatus() []TableStatus
 	// DumpFlows queries the Openflow entries from OFSwitch. The filter of the query is Openflow cookieID; the result is
 	// a map from flow cookieID to FlowStates.
 	DumpFlows(cookieID, cookieMask uint64) map[uint64]*FlowStates
 	// DeleteFlowsByCookie removes Openflow entries from OFSwitch. The removed Openflow entries use the specific CookieID.
 	DeleteFlowsByCookie(cookieID, cookieMask uint64) error
-	// AddFlowsInBundle syncs multiple Openflow entries in a single transaction. This operation could add new flows in
+	// AddEntriesInBundle syncs multiple Openflow entries in a single transaction. This operation could add new flows in
 	// "addFlows", modify flows in "modFlows", and remove flows in "delFlows" in the same bundle.
-	AddFlowsInBundle(addflows []Flow, modFlows []Flow, delFlows []Flow) error
+	AddEntriesInBundle(addEntries []Entry, modEntries []Entry, delEntries []Entry) error
 	// Connect initiates connection to the OFSwitch. It will block until the connection is established. connectCh is used to
 	// send notification whenever the switch is connected or reconnected.
 	Connect(maxRetrySec int, connectCh chan struct{}) error
@@ -93,17 +97,30 @@ type Table interface {
 	GetNext() TableIDType
 }
 
-type Flow interface {
+type EntryType string
+
+const (
+	FlowEntry  EntryType = "FlowEntry"
+	GroupEntry EntryType = "FlowEntry"
+)
+
+type Entry interface {
 	Add() error
 	Modify() error
 	Delete() error
+	Type() EntryType
+	KeyString() string
+	// Reset ensures that the entry is "correct" and that the Add /
+	// Modify / Delete methods can be called on this object. This method
+	// should be called if a reconnection event happened.
+	Reset()
+}
+
+type Flow interface {
+	Entry
 	MatchString() string
 	// CopyToBuilder returns a new FlowBuilder that copies the matches of the Flow, but does not copy the actions.
 	CopyToBuilder() FlowBuilder
-	// Reset ensures that the ofFlow object is "correct" and that the Add /
-	// Modify / Delete methods can be called on this object. This method
-	// should be called if a reconnection event happenened.
-	Reset()
 }
 
 type Action interface {
@@ -132,6 +149,7 @@ type Action interface {
 	DecTTL() FlowBuilder
 	Normal() FlowBuilder
 	Conjunction(conjID uint32, clauseID uint8, nClause uint8) FlowBuilder
+	Group(id GroupIDType) FlowBuilder
 }
 
 type FlowBuilder interface {
@@ -164,6 +182,19 @@ type FlowBuilder interface {
 	Cookie(cookieID uint64) FlowBuilder
 	Action() Action
 	Done() Flow
+}
+
+type Group interface {
+	Entry
+	Bucket() BucketBuilder
+}
+
+type BucketBuilder interface {
+	Weight(val uint16) BucketBuilder
+	LoadReg(regID int, data uint32) BucketBuilder
+	LoadRegRange(regID int, data uint32, rng Range) BucketBuilder
+	ResubmitToTable(tableID TableIDType) BucketBuilder
+	Done() Group
 }
 
 type CTAction interface {

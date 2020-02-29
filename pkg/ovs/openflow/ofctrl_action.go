@@ -279,6 +279,16 @@ func (a *ofFlowAction) Conjunction(conjID uint32, clauseID uint8, nClause uint8)
 	return a.builder
 }
 
+// Group is an action to forward packets to groups to do load-balance.
+func (a *ofFlowAction) Group(id uint32) FlowBuilder {
+	group := &ofctrl.Group{
+		Switch:    a.builder.Flow.Table.Switch,
+		ID:        id,
+	}
+	a.builder.ofFlow.lastAction = group
+	return a.builder
+}
+
 func getFieldRange(name string) (*openflow13.MatchField, Range, error) {
 	field, err := openflow13.FindFieldHeaderByName(name, false)
 	if err != nil {

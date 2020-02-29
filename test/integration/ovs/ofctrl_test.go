@@ -93,7 +93,7 @@ func TestDeleteFlowStrict(t *testing.T) {
 	testDeleteSingleFlow(t, br, table, flows2, expectFlows2)
 }
 
-func prepareOverlapFlows(table binding.Table, ipStr string, sameCookie bool) ([]binding.Flow, []*ExpectFlow) {
+func prepareOverlapFlows(table binding.Table, ipStr string, sameCookie bool) ([]binding.Entry, []*ExpectFlow) {
 	srcIP := net.ParseIP(ipStr)
 	cookie1 := getCookieID()
 	var cookie2 uint64
@@ -102,7 +102,7 @@ func prepareOverlapFlows(table binding.Table, ipStr string, sameCookie bool) ([]
 	} else {
 		cookie2 = getCookieID()
 	}
-	flows := []binding.Flow{
+	flows := []binding.Entry{
 		table.BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
 			Cookie(cookie1).
 			Action().Drop().
@@ -121,7 +121,7 @@ func prepareOverlapFlows(table binding.Table, ipStr string, sameCookie bool) ([]
 	return flows, expectFlows
 }
 
-func testDeleteSingleFlow(t *testing.T, br string, table binding.Table, flows []binding.Flow, expectFlows []*ExpectFlow) {
+func testDeleteSingleFlow(t *testing.T, br string, table binding.Table, flows []binding.Entry, expectFlows []*ExpectFlow) {
 	for id, flow := range flows {
 		if err := flow.Add(); err != nil {
 			t.Fatalf("Failed to install flow%d: %v", id, err)
@@ -148,7 +148,7 @@ func testDeleteSingleFlow(t *testing.T, br string, table binding.Table, flows []
 
 type tableFlows struct {
 	table         binding.Table
-	flowGenerator func(table binding.Table) ([]binding.Flow, []*ExpectFlow)
+	flowGenerator func(table binding.Table) ([]binding.Entry, []*ExpectFlow)
 }
 
 func TestOFctrlFlow(t *testing.T) {
@@ -243,7 +243,7 @@ func TestTransactions(t *testing.T) {
 	defer bridge.Disconnect()
 
 	flows, expectflows := prepareFlows(table)
-	err = bridge.AddFlowsInBundle(flows, nil, nil)
+	err = bridge.AddEntriesInBundle(flows, nil, nil)
 	require.Nil(t, err, fmt.Sprintf("Failed to add flows in a transaction: %v", err))
 	dumpTable := uint8(table.GetID())
 	flowList := CheckFlowExists(t, br, dumpTable, true, expectflows)
@@ -258,7 +258,7 @@ func TestTransactions(t *testing.T) {
 	}
 
 	// Delete flows in a bundle
-	err = bridge.AddFlowsInBundle(nil, nil, flows)
+	err = bridge.AddEntriesInBundle(nil, nil, flows)
 	require.Nil(t, err, fmt.Sprintf("Failed to delete flows in a transaction: %v", err))
 	dumpTable = uint8(table.GetID())
 	flowList = CheckFlowExists(t, br, dumpTable, false, expectflows)
@@ -272,7 +272,7 @@ func TestTransactions(t *testing.T) {
 	}
 
 	// Invoke AddFlowsInBundle with no Flow to add/modify/delete.
-	err = bridge.AddFlowsInBundle(nil, nil, nil)
+	err = bridge.AddEntriesInBundle(nil, nil, nil)
 	require.Nil(t, err, fmt.Sprintf("Not compatible with none flows in the request: %v", err))
 	for _, tableStates := range bridge.DumpTableStatus() {
 		if tableStates.ID == uint(dumpTable) {
@@ -337,12 +337,12 @@ func TestBundleErrorWhenOVSRestart(t *testing.T) {
 			}
 			ch := make(chan struct{})
 			go func() {
-				flows := []binding.Flow{table.BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
+				flows := []binding.Entry{table.BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
 					Cookie(getCookieID()).
 					MatchInPort(uint32(count + 1)).
 					Action().ResubmitToTable(table.GetNext()).
 					Done()}
-				err = bridge.AddFlowsInBundle(flows, nil, nil)
+				err = bridge.AddEntriesInBundle(flows, nil, nil)
 				if err != nil {
 					errMsg := err.Error()
 					_, found := expectedErrorMsgs[errMsg]
@@ -404,8 +404,8 @@ func TestReconnectOFSwitch(t *testing.T) {
 	require.Equal(t, 2, connectCount)
 }
 
-func prepareFlows(table binding.Table) ([]binding.Flow, []*ExpectFlow) {
-	var flows []binding.Flow
+func prepareFlows(table binding.Table) ([]binding.Entry, []*ExpectFlow) {
+	var flows []binding.Entry
 	_, AllIPs, _ := net.ParseCIDR("0.0.0.0/0")
 	_, conjSrcIPNet, _ := net.ParseCIDR("192.168.3.0/24")
 	gwMACData, _ := strconv.ParseUint(strings.Replace(gwMAC.String(), ":", "", -1), 16, 64)
@@ -573,7 +573,7 @@ func prepareFlows(table binding.Table) ([]binding.Flow, []*ExpectFlow) {
 	return flows, flowStrs
 }
 
-func prepareNATflows(table binding.Table) ([]binding.Flow, []*ExpectFlow) {
+func prepareNATflows(table binding.Table) ([]binding.Entry, []*ExpectFlow) {
 	natedIP1 := net.ParseIP("10.10.0.1")
 	natedIP2 := net.ParseIP("10.10.0.10")
 	natIPRange1 := &binding.IPRange{natedIP1, natedIP1}
@@ -584,7 +584,7 @@ func prepareNATflows(table binding.Table) ([]binding.Flow, []*ExpectFlow) {
 	snatMarkRange2 := binding.Range{18, 18}
 	dnatMarkRange1 := binding.Range{19, 19}
 	dnatMarkRange2 := binding.Range{20, 20}
-	flows := []binding.Flow{
+	flows := []binding.Entry{
 		table.BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
 			Action().CT(false, table.GetNext(), ctZone).NAT().CTDone().
 			Cookie(getCookieID()).

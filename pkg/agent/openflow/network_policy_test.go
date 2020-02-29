@@ -400,7 +400,7 @@ func createMockTable(ctrl *gomock.Controller, tableID binding.TableIDType, nextT
 
 func prepareClient(ctrl *gomock.Controller) *client {
 	bridge := mocks.NewMockBridge(ctrl)
-	bridge.EXPECT().AddFlowsInBundle(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	bridge.EXPECT().AddEntriesInBundle(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	outTable = createMockTable(ctrl, egressRuleTable, egressDefaultTable, binding.TableMissActionNext)
 	outDropTable = createMockTable(ctrl, egressDefaultTable, l3ForwardingTable, binding.TableMissActionNext)
 	outAllowTable = createMockTable(ctrl, l3ForwardingTable, l2ForwardingCalcTable, binding.TableMissActionNext)
@@ -415,9 +415,9 @@ func prepareClient(ctrl *gomock.Controller) *client {
 		bridge:                   bridge,
 	}
 	c.cookieAllocator = cookie.NewAllocator(0)
-	m := oftest.NewMockFlowOperations(ctrl)
+	m := oftest.NewMockEntryOperations(ctrl)
 	m.EXPECT().AddAll(gomock.Any()).Return(nil).AnyTimes()
 	m.EXPECT().DeleteAll(gomock.Any()).Return(nil).AnyTimes()
-	c.flowOperations = m
+	c.operations = m
 	return c
 }

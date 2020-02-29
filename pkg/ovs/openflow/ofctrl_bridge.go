@@ -131,6 +131,14 @@ type OFBridge struct {
 	connected chan bool
 }
 
+func (b *OFBridge) BuildGroup(id GroupIDType) Group {
+	g := &ofGroup{bridge: b, ofctrl: new(ofctrl.Group)}
+	g.ofctrl.Switch = b.ofSwitch
+	g.ofctrl.ID = id
+	g.ofctrl.GroupType = ofctrl.GroupSelect
+	return g
+}
+
 func (b *OFBridge) CreateTable(id, next TableIDType, missAction MissActionType) Table {
 	t := newOFTable(id, next, missAction)
 
@@ -280,15 +288,15 @@ func (b *OFBridge) DeleteFlowsByCookie(cookieID, cookieMask uint64) error {
 	flowMod.OutPort = openflow13.P_ANY
 	flowMod.OutGroup = openflow13.OFPG_ANY
 	flowMod.TableId = openflow13.OFPTT_ALL
-	b.ofSwitch.Send(flowMod)
-	return nil
+	return b.ofSwitch.Send(flowMod)
 }
 
 func (b *OFBridge) IsConnected() bool {
 	return b.ofSwitch.IsReady()
 }
 
-func (b *OFBridge) AddFlowsInBundle(addflows []Flow, modFlows []Flow, delFlows []Flow) error {
+// TODO: @wenying, handle group also
+func (b *OFBridge) AddEntriesInBundle(addflows []Entry, modFlows []Entry, delFlows []Entry) error {
 	// If no Openflow entries are requested to be added or modified or deleted on the OVS bridge, return immediately.
 	if len(addflows) == 0 && len(modFlows) == 0 && len(delFlows) == 0 {
 		klog.V(2).Info("No Openflow entries need to be synced to the OVS bridge, returning")
@@ -301,9 +309,12 @@ func (b *OFBridge) AddFlowsInBundle(addflows []Flow, modFlows []Flow, delFlows [
 		return err
 	}
 
-	syncFlows := func(flows []Flow, operation int) error {
-		for _, flow := range flows {
-			ofFlow := flow.(*ofFlow)
+	syncFlows := func(entries []Entry, operation int) error {
+		for _, entry := range entries {
+			ofFlow, ok := entry.(*ofFlow)
+			if !ok {
+				continue
+			}
 			ofFlow.Flow.NextElem = ofFlow.lastAction
 			// "AddFlow" operation is async, the function only returns error which occur when constructing and sending
 			// the BundleAdd message. An absence of error does not mean that all Openflow entries are added into the

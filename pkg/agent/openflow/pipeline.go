@@ -96,17 +96,17 @@ var (
 	ReentranceMAC, _    = net.ParseMAC("de:ad:be:ef:de:ad")
 )
 
-type FlowOperations interface {
-	Add(flow binding.Flow) error
-	Modify(flow binding.Flow) error
-	Delete(flow binding.Flow) error
-	AddAll(flows []binding.Flow) error
-	DeleteAll(flows []binding.Flow) error
+type EntryOperations interface {
+	Add(entry binding.Entry) error
+	Modify(entry binding.Entry) error
+	Delete(entry binding.Entry) error
+	AddAll(entries []binding.Entry) error
+	DeleteAll(entries []binding.Entry) error
 }
 
-type flowCache map[string]binding.Flow
+type entryCache map[string]binding.Entry
 
-type flowCategoryCache struct {
+type entryCategoryCache struct {
 	sync.Map
 }
 
@@ -115,13 +115,13 @@ type client struct {
 	cookieAllocator             cookie.Allocator
 	bridge                      binding.Bridge
 	pipeline                    map[binding.TableIDType]binding.Table
-	nodeFlowCache, podFlowCache *flowCategoryCache // cache for corresponding deletions
+	nodeFlowCache, podFlowCache *entryCategoryCache // cache for corresponding deletions
 	// "fixed" flows installed by the agent after initialization and which do not change during
 	// the lifetime of the client.
-	gatewayFlows, clusterServiceCIDRFlows, defaultTunnelFlows []binding.Flow
-	// flowOperations is a wrapper interface for flow Add / Modify / Delete operations. It
+	gatewayFlows, clusterServiceCIDRFlows, defaultTunnelFlows []binding.Entry
+	// operations is a wrapper interface for flow Add / Modify / Delete operations. It
 	// enables convenient mocking in unit tests.
-	flowOperations FlowOperations
+	operations EntryOperations
 	// policyCache is a map from PolicyRule ID to policyRuleConjunction. It's guaranteed that one policyRuleConjunction
 	// is processed by at most one goroutine at any given time.
 	policyCache       sync.Map
@@ -135,24 +135,24 @@ type client struct {
 	encapMode   config.TrafficEncapModeType
 }
 
-func (c *client) Add(flow binding.Flow) error {
-	return c.bridge.AddFlowsInBundle([]binding.Flow{flow}, nil, nil)
+func (c *client) Add(entry binding.Entry) error {
+	return c.bridge.AddEntriesInBundle([]binding.Entry{entry}, nil, nil)
 }
 
-func (c *client) Modify(flow binding.Flow) error {
-	return c.bridge.AddFlowsInBundle(nil, []binding.Flow{flow}, nil)
+func (c *client) Modify(entry binding.Entry) error {
+	return c.bridge.AddEntriesInBundle(nil, []binding.Entry{entry}, nil)
 }
 
-func (c *client) Delete(flow binding.Flow) error {
-	return c.bridge.AddFlowsInBundle(nil, nil, []binding.Flow{flow})
+func (c *client) Delete(entry binding.Entry) error {
+	return c.bridge.AddEntriesInBundle(nil, nil, []binding.Entry{entry})
 }
 
-func (c *client) AddAll(flows []binding.Flow) error {
-	return c.bridge.AddFlowsInBundle(flows, nil, nil)
+func (c *client) AddAll(entries []binding.Entry) error {
+	return c.bridge.AddEntriesInBundle(entries, nil, nil)
 }
 
-func (c *client) DeleteAll(flows []binding.Flow) error {
-	return c.bridge.AddFlowsInBundle(nil, nil, flows)
+func (c *client) DeleteAll(entries []binding.Entry) error {
+	return c.bridge.AddEntriesInBundle(nil, nil, entries)
 }
 
 // defaultFlows generates the default flows of all tables.
@@ -332,7 +332,7 @@ func (c *client) l3FlowsToPod(localGatewayMAC net.HardwareAddr, podInterfaceIP n
 		Action().SetSrcMAC(localGatewayMAC).
 		Action().SetDstMAC(podInterfaceMAC).
 		Action().DecTTL().
-		Action().ResubmitToTable(l3FwdTable.GetNext()).
+		Action().ResubmitToTable(l2ForwardingCalcTable).
 		Cookie(c.cookieAllocator.Request(category).Raw()).
 		Done()
 }
@@ -344,7 +344,7 @@ func (c *client) l3ToGatewayFlow(localGatewayIP net.IP, localGatewayMAC net.Hard
 		MatchDstMAC(globalVirtualMAC).
 		MatchDstIP(localGatewayIP).
 		Action().SetDstMAC(localGatewayMAC).
-		Action().ResubmitToTable(l3FwdTable.GetNext()).
+		Action().ResubmitToTable(l2ForwardingCalcTable).
 		Cookie(c.cookieAllocator.Request(category).Raw()).
 		Done()
 }
@@ -488,8 +488,8 @@ func (c *client) Disconnect() error {
 	return c.bridge.Disconnect()
 }
 
-func newFlowCategoryCache() *flowCategoryCache {
-	return &flowCategoryCache{}
+func newEntryCategoryCache() *entryCategoryCache {
+	return &entryCategoryCache{}
 }
 
 // establishedConnectionFlows generates flows to ensure established connections skip the NetworkPolicy rules.
@@ -599,11 +599,11 @@ func NewClient(bridgeName string) Client {
 			conntrackCommitTable:  bridge.CreateTable(conntrackCommitTable, l2ForwardingOutTable, binding.TableMissActionNext),
 			l2ForwardingOutTable:  bridge.CreateTable(l2ForwardingOutTable, binding.LastTableID, binding.TableMissActionDrop),
 		},
-		nodeFlowCache:            newFlowCategoryCache(),
-		podFlowCache:             newFlowCategoryCache(),
+		nodeFlowCache:            newEntryCategoryCache(),
+		podFlowCache:             newEntryCategoryCache(),
 		policyCache:              sync.Map{},
 		globalConjMatchFlowCache: map[string]*conjMatchFlowContext{},
 	}
-	c.flowOperations = c
+	c.operations = c
 	return c
 }
