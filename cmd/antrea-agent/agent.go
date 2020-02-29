@@ -31,6 +31,7 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/agent/controller/noderoute"
 	"github.com/vmware-tanzu/antrea/pkg/agent/interfacestore"
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
+	"github.com/vmware-tanzu/antrea/pkg/agent/proxy"
 	"github.com/vmware-tanzu/antrea/pkg/agent/route"
 	"github.com/vmware-tanzu/antrea/pkg/apis/networking/v1beta1"
 	"github.com/vmware-tanzu/antrea/pkg/k8s"
@@ -117,6 +118,21 @@ func run(o *Options) error {
 	podUpdates := make(chan v1beta1.PodReference, 100)
 	networkPolicyController := networkpolicy.NewNetworkPolicyController(antreaClient, ofClient, ifaceStore, nodeConfig.Name, podUpdates)
 
+	agentMonitor := monitor.NewAgentMonitor(
+		crdClient,
+		o.config.OVSBridge,
+		nodeConfig.Name,
+		nodeConfig.PodCIDR.String(),
+		ifaceStore,
+		ofClient,
+		ovsBridgeClient,
+		networkPolicyController)
+
+	proxyInstance, err := proxy.New(agentMonitor, ifaceStore, ofClient, informerFactory)
+	if err != nil {
+		return err
+	}
+
 	cniServer := cniserver.New(
 		o.config.CNISocket,
 		o.config.HostProcPathPrefix,
@@ -146,15 +162,7 @@ func run(o *Options) error {
 
 	go networkPolicyController.Run(stopCh)
 
-	agentMonitor := monitor.NewAgentMonitor(
-		crdClient,
-		o.config.OVSBridge,
-		nodeConfig.Name,
-		nodeConfig.PodCIDR.String(),
-		ifaceStore,
-		ofClient,
-		ovsBridgeClient,
-		networkPolicyController)
+	go proxyInstance.Run(stopCh)
 
 	go agentMonitor.Run(stopCh)
 

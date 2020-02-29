@@ -15,6 +15,7 @@
 package openflow
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
@@ -29,20 +30,23 @@ import (
 
 const (
 	// Flow table id index
-	classifierTable       binding.TableIDType = 0
-	spoofGuardTable       binding.TableIDType = 10
-	arpResponderTable     binding.TableIDType = 20
-	conntrackTable        binding.TableIDType = 30
-	conntrackStateTable   binding.TableIDType = 31
-	dnatTable             binding.TableIDType = 40
-	egressRuleTable       binding.TableIDType = 50
-	egressDefaultTable    binding.TableIDType = 60
-	l3ForwardingTable     binding.TableIDType = 70
-	l2ForwardingCalcTable binding.TableIDType = 80
-	ingressRuleTable      binding.TableIDType = 90
-	ingressDefaultTable   binding.TableIDType = 100
-	conntrackCommitTable  binding.TableIDType = 105
-	l2ForwardingOutTable  binding.TableIDType = 110
+	classifierTable        binding.TableIDType = 0
+	spoofGuardTable        binding.TableIDType = 10
+	arpResponderTable      binding.TableIDType = 20
+	conntrackTable         binding.TableIDType = 30
+	conntrackStateTable    binding.TableIDType = 31
+	sessionAffinityTable   binding.TableIDType = 40
+	serviceLBTable         binding.TableIDType = 41
+	endpointNATTable       binding.TableIDType = 42
+	egressRuleTable        binding.TableIDType = 50
+	egressDefaultTable     binding.TableIDType = 60
+	l3ForwardingTable      binding.TableIDType = 70
+	serviceForwardingTable binding.TableIDType = 71
+	l2ForwardingCalcTable  binding.TableIDType = 80
+	ingressRuleTable       binding.TableIDType = 90
+	ingressDefaultTable    binding.TableIDType = 100
+	conntrackCommitTable   binding.TableIDType = 105
+	l2ForwardingOutTable   binding.TableIDType = 110
 
 	// Flow priority level
 	priorityHigh   = uint16(210)
@@ -82,8 +86,15 @@ func (rt regType) reg() string {
 const (
 	// marksReg stores traffic-source mark and pod-found mark.
 	// traffic-source resides in [0..15], pod-found resides in [16].
-	marksReg     regType = 0
-	portCacheReg regType = 1
+	marksReg        regType = 0
+	portCacheReg    regType = 1
+	serviceIPReg    regType = 1
+	servicePortReg  regType = 2
+	serviceLearnReg regType = 3
+
+	serviceNeedLearnMark    uint32 = 0xfff0
+	serviceNoLearnMark      uint32 = 0xfff1
+	serviceUnknownLearnMark uint32 = 0xfff2
 
 	ctZone = 0xfff0
 
@@ -111,11 +122,11 @@ type entryCategoryCache struct {
 }
 
 type client struct {
-	roundInfo                   types.RoundInfo
-	cookieAllocator             cookie.Allocator
-	bridge                      binding.Bridge
-	pipeline                    map[binding.TableIDType]binding.Table
-	nodeFlowCache, podFlowCache *entryCategoryCache // cache for corresponding deletions
+	roundInfo                                     types.RoundInfo
+	cookieAllocator                               cookie.Allocator
+	bridge                                        binding.Bridge
+	pipeline                                      map[binding.TableIDType]binding.Table
+	nodeFlowCache, podFlowCache, serviceFlowCache *entryCategoryCache // cache for corresponding deletions
 	// "fixed" flows installed by the agent after initialization and which do not change during
 	// the lifetime of the client.
 	gatewayFlows, clusterServiceCIDRFlows, defaultTunnelFlows []binding.Entry
@@ -126,6 +137,8 @@ type client struct {
 	// is processed by at most one goroutine at any given time.
 	policyCache       sync.Map
 	conjMatchFlowLock sync.Mutex // Lock for access globalConjMatchFlowCache
+	// TODO: add doc
+	groupCache sync.Map
 	// globalConjMatchFlowCache is a global map for conjMatchFlowContext. The key is a string generated from the
 	// conjMatchFlowContext.
 	globalConjMatchFlowCache map[string]*conjMatchFlowContext
@@ -246,7 +259,7 @@ func (c *client) connectionTrackFlows(category cookie.Category) (flows []binding
 	connectionTrackCommitTable := c.pipeline[conntrackCommitTable]
 	flows = []binding.Flow{
 		connectionTrackTable.BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
-			Action().CT(false, connectionTrackTable.GetNext(), ctZone).CTDone().
+			Action().CT(false, connectionTrackTable.GetNext(), ctZone).NAT().CTDone().
 			Cookie(c.cookieAllocator.Request(category).Raw()).
 			Done(),
 		connectionTrackStateTable.BuildFlow(priorityHigh).MatchProtocol(binding.ProtocolIP).
@@ -255,6 +268,12 @@ func (c *client) connectionTrackFlows(category cookie.Category) (flows []binding
 			MatchCTStateNew(false).MatchCTStateTrk(true).
 			Action().ResubmitToTable(connectionTrackStateTable.GetNext()).
 			Cookie(c.cookieAllocator.Request(category).Raw()).
+			Done(),
+		// TODO: replace the default flow
+		connectionTrackStateTable.BuildFlow(priorityMiss).
+			Cookie(c.cookieAllocator.Request(category).Raw()).
+			Action().ResubmitToTable(sessionAffinityTable).
+			Action().ResubmitToTable(serviceLBTable).
 			Done(),
 		connectionTrackStateTable.BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
 			MatchCTStateInv(true).MatchCTStateTrk(true).
@@ -456,14 +475,13 @@ func (c *client) gatewayIPSpoofGuardFlow(gatewayOFPort uint32, category cookie.C
 }
 
 // serviceCIDRDNATFlow generates flows to match dst IP in service CIDR and output to host gateway interface directly.
-func (c *client) serviceCIDRDNATFlow(serviceCIDR *net.IPNet, gatewayOFPort uint32, category cookie.Category) binding.Flow {
-	return c.pipeline[dnatTable].BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
-		MatchDstIPNet(*serviceCIDR).
-		Action().LoadRegRange(int(portCacheReg), gatewayOFPort, ofPortRegRange).
-		Action().LoadRegRange(int(marksReg), portFoundMark, ofPortMarkRange).
-		Action().ResubmitToTable(conntrackCommitTable).
-		Cookie(c.cookieAllocator.Request(category).Raw()).
-		Done()
+func (c *client) serviceCIDRDNATFlow() []binding.Entry {
+	return []binding.Entry{
+		c.pipeline[sessionAffinityTable].BuildFlow(priorityMiss).
+			Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+			Action().LoadRegRange(int(serviceLearnReg), serviceUnknownLearnMark, binding.Range{0, 31}).
+			Done(),
+	}
 }
 
 // arpNormalFlow generates the flow to response arp in normal way if no flow in arpResponderTable is matched.
@@ -578,29 +596,90 @@ func (c *client) localProbeFlow(localGatewayIP net.IP, category cookie.Category)
 		Done()
 }
 
+func (c *client) serviceLearnFlow(svcIP net.IP, svcPort uint16, protocol binding.Protocol, affinityTimeout uint16) binding.Entry {
+	learnFlowBuilder := c.pipeline[serviceLBTable].BuildFlow(priorityHigh).
+		MatchReg(int(serviceLearnReg), serviceNeedLearnMark).
+		MatchDstIP(svcIP).
+		Cookie(c.cookieAllocator.Request(cookie.Service).Raw())
+	learnFlowBuilderLearnAction := learnFlowBuilder.Action().Learn(sessionAffinityTable, priorityNormal, affinityTimeout, c.cookieAllocator.Request(cookie.Service).Raw())
+	if protocol == binding.ProtocolTCP {
+		learnFlowBuilder = learnFlowBuilder.MatchTCPDstPort(svcPort)
+		learnFlowBuilderLearnAction = learnFlowBuilderLearnAction.MatchLearntTCPDSTPort()
+	} else {
+		learnFlowBuilder = learnFlowBuilder.MatchUDPDstPort(svcPort)
+		learnFlowBuilderLearnAction = learnFlowBuilderLearnAction.MatchLearntUDPDSTPort()
+	}
+	learnFlowBuilder = learnFlowBuilderLearnAction.
+		MatchLearntDstIP().
+		MatchLearntSrcIP().
+		LoadRegToReg(int(serviceIPReg), int(serviceIPReg)).
+		LoadRegToReg(int(servicePortReg), int(servicePortReg)).
+		LoadReg(int(serviceLearnReg), serviceNoLearnMark).
+		Done()
+	learnFlowBuilder = learnFlowBuilder.Action().ResubmitToTable(endpointNATTable)
+	return learnFlowBuilder.Done()
+}
+
+func (c *client) serviceLBFlow(groupID binding.GroupIDType, svcIP net.IP, svcPort uint16, protocol binding.Protocol) binding.Entry {
+	lbFlowBuilder := c.pipeline[serviceLBTable].BuildFlow(priorityNormal)
+	if protocol == binding.ProtocolTCP {
+		lbFlowBuilder = lbFlowBuilder.MatchTCPDstPort(svcPort)
+	} else {
+		lbFlowBuilder = lbFlowBuilder.MatchUDPDstPort(svcPort)
+	}
+	lbFlow := lbFlowBuilder.
+		MatchDstIP(svcIP).
+		MatchReg(int(serviceLearnReg), serviceUnknownLearnMark).
+		Action().Group(groupID).
+		Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+		Done()
+	return lbFlow
+}
+
+func (c *client) endpointNATFlow(endpointIP net.IP, endpointPort uint16, protocol binding.Protocol) binding.Entry {
+	ipVal := binary.BigEndian.Uint32(endpointIP)
+	return c.pipeline[endpointNATTable].BuildFlow(priorityNormal).
+		Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+		MatchProtocol(protocol).
+		MatchReg(int(serviceIPReg), ipVal).
+		MatchReg(int(servicePortReg), uint32(endpointPort)).
+		Action().CT(true, egressRuleTable, 0xfff0).
+		DNAT(
+			&binding.IPRange{StartIP: endpointIP, EndIP: endpointIP},
+			&binding.PortRange{StartPort: endpointPort, EndPort: endpointPort},
+		).
+		LoadToMark(0xfff1).
+		CTDone().
+		Done()
+}
+
 // NewClient is the constructor of the Client interface.
 func NewClient(bridgeName string) Client {
 	bridge := binding.NewOFBridge(bridgeName)
 	c := &client{
 		bridge: bridge,
 		pipeline: map[binding.TableIDType]binding.Table{
-			classifierTable:       bridge.CreateTable(classifierTable, spoofGuardTable, binding.TableMissActionDrop),
-			spoofGuardTable:       bridge.CreateTable(spoofGuardTable, conntrackTable, binding.TableMissActionDrop),
-			conntrackTable:        bridge.CreateTable(conntrackTable, conntrackStateTable, binding.TableMissActionNone),
-			conntrackStateTable:   bridge.CreateTable(conntrackStateTable, dnatTable, binding.TableMissActionNext),
-			dnatTable:             bridge.CreateTable(dnatTable, egressRuleTable, binding.TableMissActionNext),
-			egressRuleTable:       bridge.CreateTable(egressRuleTable, egressDefaultTable, binding.TableMissActionNext),
-			egressDefaultTable:    bridge.CreateTable(egressDefaultTable, l3ForwardingTable, binding.TableMissActionNext),
-			l3ForwardingTable:     bridge.CreateTable(l3ForwardingTable, l2ForwardingCalcTable, binding.TableMissActionNext),
-			l2ForwardingCalcTable: bridge.CreateTable(l2ForwardingCalcTable, ingressRuleTable, binding.TableMissActionNext),
-			arpResponderTable:     bridge.CreateTable(arpResponderTable, binding.LastTableID, binding.TableMissActionDrop),
-			ingressRuleTable:      bridge.CreateTable(ingressRuleTable, ingressDefaultTable, binding.TableMissActionNext),
-			ingressDefaultTable:   bridge.CreateTable(ingressDefaultTable, conntrackCommitTable, binding.TableMissActionNext),
-			conntrackCommitTable:  bridge.CreateTable(conntrackCommitTable, l2ForwardingOutTable, binding.TableMissActionNext),
-			l2ForwardingOutTable:  bridge.CreateTable(l2ForwardingOutTable, binding.LastTableID, binding.TableMissActionDrop),
+			classifierTable:        bridge.CreateTable(classifierTable, spoofGuardTable, binding.TableMissActionDrop),
+			spoofGuardTable:        bridge.CreateTable(spoofGuardTable, conntrackTable, binding.TableMissActionDrop),
+			conntrackTable:         bridge.CreateTable(conntrackTable, conntrackStateTable, binding.TableMissActionNone),
+			conntrackStateTable:    bridge.CreateTable(conntrackStateTable, endpointNATTable, binding.TableMissActionNext),
+			sessionAffinityTable:   bridge.CreateTable(sessionAffinityTable, binding.LastTableID, binding.TableMissActionNone),
+			serviceLBTable:         bridge.CreateTable(serviceLBTable, endpointNATTable, binding.TableMissActionNext),
+			endpointNATTable:       bridge.CreateTable(endpointNATTable, egressRuleTable, binding.TableMissActionNext),
+			egressRuleTable:        bridge.CreateTable(egressRuleTable, egressDefaultTable, binding.TableMissActionNext),
+			egressDefaultTable:     bridge.CreateTable(egressDefaultTable, l3ForwardingTable, binding.TableMissActionNext),
+			l3ForwardingTable:      bridge.CreateTable(l3ForwardingTable, serviceForwardingTable, binding.TableMissActionNext),
+			serviceForwardingTable: bridge.CreateTable(serviceForwardingTable, l2ForwardingCalcTable, binding.TableMissActionNext),
+			l2ForwardingCalcTable:  bridge.CreateTable(l2ForwardingCalcTable, ingressRuleTable, binding.TableMissActionNext),
+			arpResponderTable:      bridge.CreateTable(arpResponderTable, binding.LastTableID, binding.TableMissActionDrop),
+			ingressRuleTable:       bridge.CreateTable(ingressRuleTable, ingressDefaultTable, binding.TableMissActionNext),
+			ingressDefaultTable:    bridge.CreateTable(ingressDefaultTable, conntrackCommitTable, binding.TableMissActionNext),
+			conntrackCommitTable:   bridge.CreateTable(conntrackCommitTable, l2ForwardingOutTable, binding.TableMissActionNext),
+			l2ForwardingOutTable:   bridge.CreateTable(l2ForwardingOutTable, binding.LastTableID, binding.TableMissActionDrop),
 		},
 		nodeFlowCache:            newEntryCategoryCache(),
 		podFlowCache:             newEntryCategoryCache(),
+		serviceFlowCache:         newEntryCategoryCache(),
 		policyCache:              sync.Map{},
 		globalConjMatchFlowCache: map[string]*conjMatchFlowContext{},
 	}

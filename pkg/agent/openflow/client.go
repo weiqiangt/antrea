@@ -15,10 +15,12 @@
 package openflow
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 
 	"k8s.io/klog"
+	k8sproxy "k8s.io/kubernetes/pkg/proxy"
 
 	"github.com/vmware-tanzu/antrea/pkg/agent/config"
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow/cookie"
@@ -43,7 +45,7 @@ type Client interface {
 	// InstallClusterServiceCIDRFlows sets up the appropriate flows so that traffic can reach
 	// the different Services running in the Cluster. This method needs to be invoked once with
 	// the Cluster Service CIDR as a parameter.
-	InstallClusterServiceCIDRFlows(serviceNet *net.IPNet, gatewayOFPort uint32) error
+	InstallClusterServiceCIDRFlows() error
 
 	// InstallDefaultTunnelFlows sets up the classification flow for the default (flow based) tunnel.
 	InstallDefaultTunnelFlows(tunnelOFPort uint32) error
@@ -78,6 +80,11 @@ type Client interface {
 	// UninstallPodFlows removes the connection to the local Pod specified with the
 	// containerID. UninstallPodFlows will do nothing if no connection to the Pod was established.
 	UninstallPodFlows(containerID string) error
+
+	UpdateEndpointsGroup(groupID uint32, protocol binding.Protocol, withSessionAffinity bool, endpoints ...k8sproxy.Endpoint) error
+
+	InstallServiceFlows(groupID uint32, svcIP net.IP, svcPort uint16, protocol binding.Protocol, affinityTimeout uint16) error
+	UninstallServiceFlows(groupID uint32) error
 
 	// GetFlowTableStatus should return an array of flow table status, all existing flow tables should be included in the list.
 	GetFlowTableStatus() []binding.TableStatus
@@ -217,6 +224,15 @@ func (c *client) InstallPodFlows(containerID string, podInterfaceIP net.IP, podI
 	// NoEncap mode has no tunnel.
 	if c.encapMode.SupportsEncap() {
 		flows = append(flows, c.l3FlowsToPod(gatewayMAC, podInterfaceIP, podInterfaceMAC, cookie.Pod))
+		flow := c.pipeline[serviceForwardingTable].BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
+			MatchCTMark(0xfff1).
+			MatchDstIP(podInterfaceIP).
+			Action().SetDstMAC(podInterfaceMAC).
+			Action().DecTTL().
+			Action().ResubmitToTable(l2ForwardingCalcTable).
+			Cookie(c.cookieAllocator.Request(cookie.Pod).Raw()).
+			Done()
+		flows = append(flows, flow)
 	}
 	return c.addEntries(c.podFlowCache, containerID, flows)
 }
@@ -227,12 +243,73 @@ func (c *client) UninstallPodFlows(containerID string) error {
 	return c.deleteEntries(c.podFlowCache, containerID)
 }
 
-func (c *client) InstallClusterServiceCIDRFlows(serviceNet *net.IPNet, gatewayOFPort uint32) error {
-	flow := c.serviceCIDRDNATFlow(serviceNet, gatewayOFPort, cookie.Service)
-	if err := c.operations.Add(flow); err != nil {
+func (c *client) InstallServiceFlows(groupID uint32, svcIP net.IP, svcPort uint16, protocol binding.Protocol, affinityTimeout uint16) error {
+	var entries []binding.Entry
+	entries = append(entries, c.serviceLBFlow(groupID, svcIP, svcPort, protocol))
+	if affinityTimeout != 0 {
+		entries = append(entries, c.serviceLearnFlow(svcIP, svcPort, protocol, affinityTimeout))
+	}
+	flowKey := fmt.Sprintf("%s:%d:%s", svcIP, svcPort, protocol)
+	return c.addEntries(c.serviceFlowCache, flowKey, entries)
+}
+
+func (c *client) UpdateEndpointsGroup(groupID uint32, protocol binding.Protocol, withSessionAffinity bool, endpoints ...k8sproxy.Endpoint) error {
+	var entries []binding.Entry
+	groupInterface, _ := c.groupCache.LoadOrStore(groupID, c.bridge.BuildGroup(groupID))
+	group := groupInterface.(binding.Group)
+	group.ResetBucket()
+	var resubmitTableID binding.TableIDType
+	var lbResultMark uint32
+	if withSessionAffinity {
+		resubmitTableID = serviceLBTable
+		lbResultMark = serviceNeedLearnMark
+	} else {
+		resubmitTableID = endpointNATTable
+		lbResultMark = serviceNoLearnMark
+	}
+
+	for _, endpoint := range endpoints {
+		endpointPort, _ := endpoint.Port()
+		endpointIP := net.ParseIP(endpoint.IP()).To4()
+		ipVal := binary.BigEndian.Uint32(endpointIP)
+		portVal := uint16(endpointPort)
+
+		// TODO: add group to entries.
+		group = group.Bucket().Weight(100).
+			LoadReg(int(serviceIPReg), ipVal).
+			LoadReg(int(servicePortReg), uint32(portVal)).
+			LoadReg(int(serviceLearnReg), lbResultMark).
+			ResubmitToTable(resubmitTableID).
+			Done()
+
+		entries = append(entries, c.endpointNATFlow(endpointIP, portVal, protocol))
+	}
+	if err := group.Add(); err != nil {
+		return fmt.Errorf("error when installing endpoint: %w", err)
+	}
+	cacheKey := fmt.Sprintf("Endpoints:%d", groupID)
+	return c.addEntries(c.serviceFlowCache, cacheKey, entries)
+}
+
+func (c *client) UninstallServiceFlows(groupID uint32) error {
+	if obj, _ := c.groupCache.Load(groupID); obj != nil {
+		if err := obj.(binding.Group).Delete(); err != nil {
+			return err
+		}
+		cacheKey := fmt.Sprintf("Endpoints:%d", groupID)
+		if err := c.deleteEntries(c.serviceFlowCache, cacheKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *client) InstallClusterServiceCIDRFlows() error {
+	flows := c.serviceCIDRDNATFlow()
+	if err := c.operations.AddAll(flows); err != nil {
 		return err
 	}
-	c.clusterServiceCIDRFlows = []binding.Entry{flow}
+	c.clusterServiceCIDRFlows = flows
 	return nil
 }
 
@@ -368,6 +445,7 @@ func (c *client) ReplayFlows() {
 
 	c.nodeFlowCache.Range(installCachedFlows)
 	c.podFlowCache.Range(installCachedFlows)
+	c.serviceFlowCache.Range(installCachedFlows)
 
 	c.replayPolicyFlows()
 }

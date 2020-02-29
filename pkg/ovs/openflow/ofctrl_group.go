@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/contiv/libOpenflow/openflow13"
+
 	"github.com/contiv/ofnet/ofctrl"
 )
 
@@ -42,6 +43,11 @@ func (g *ofGroup) Bucket() BucketBuilder {
 		group:        g,
 		bucket:       openflow13.NewBucket(),
 	}
+}
+
+func (g *ofGroup) ResetBucket() Group {
+	g.ofctrl.Buckets = nil
+	return g
 }
 
 type bucketBuilder struct {

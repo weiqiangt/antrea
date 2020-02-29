@@ -112,7 +112,8 @@ func (monitor *controllerMonitor) Run(stopCh <-chan struct{}) {
 	monitor.deleteStaleAgentCRDs()
 
 	// Update controller monitoring CRD variables every 60 seconds util stopCh is closed.
-	wait.PollUntil(60*time.Second, func() (done bool, err error) {
+	wait.PollUntil(60*time.Minute, func() (done bool, err error) {
+	//TODO: revert to `wait.PollUntil(60*time.Second, func() (done bool, err error) {`
 		controllerCRD, err = monitor.partialUpdateControllerCRD(controllerCRD)
 		if err != nil {
 			klog.Errorf("Failed to partially update controller monitoring CRD %v : %v", controllerCRD, err)

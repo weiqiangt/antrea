@@ -265,7 +265,7 @@ func (b *ofFlowBuilder) MatchConjID(value uint32) FlowBuilder {
 }
 
 // MatchProtocol adds match condition for matching protocol type.
-func (b *ofFlowBuilder) MatchProtocol(protocol protocol) FlowBuilder {
+func (b *ofFlowBuilder) MatchProtocol(protocol Protocol) FlowBuilder {
 	switch strings.ToLower(protocol) {
 	case ProtocolIP:
 		b.Match.Ethertype = 0x0800

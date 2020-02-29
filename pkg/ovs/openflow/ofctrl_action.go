@@ -1,10 +1,12 @@
 package openflow
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 
 	"github.com/contiv/libOpenflow/openflow13"
+
 	"github.com/contiv/ofnet/ofctrl"
 )
 
@@ -246,17 +248,14 @@ func (a *ofFlowAction) MoveRange(fromField, toField string, fromRange, toRange R
 
 // Resubmit is an action to resubmit packet to the specified table with the port as new in_port. If port is empty string,
 // the in_port field is not changed.
-func (a *ofFlowAction) Resubmit(ofPort uint16, table TableIDType) FlowBuilder {
-	ofTableID := uint8(table)
-	resubmit := ofctrl.NewResubmit(&ofPort, &ofTableID)
-	a.builder.ofFlow.lastAction = resubmit
+func (a *ofFlowAction) Resubmit(ofPort uint16, tableID TableIDType) FlowBuilder {
+	a.builder.ofFlow.Resubmit(ofPort, uint8(tableID))
 	return a.builder
 }
 
 func (a *ofFlowAction) ResubmitToTable(table TableIDType) FlowBuilder {
 	ofTableID := uint8(table)
-	resubmit := ofctrl.NewResubmit(nil, &ofTableID)
-	a.builder.ofFlow.lastAction = resubmit
+	a.builder.ofFlow.Resubmit(openflow13.OFPP_IN_PORT, ofTableID)
 	return a.builder
 }
 
@@ -282,11 +281,88 @@ func (a *ofFlowAction) Conjunction(conjID uint32, clauseID uint8, nClause uint8)
 // Group is an action to forward packets to groups to do load-balance.
 func (a *ofFlowAction) Group(id uint32) FlowBuilder {
 	group := &ofctrl.Group{
-		Switch:    a.builder.Flow.Table.Switch,
-		ID:        id,
+		Switch: a.builder.Flow.Table.Switch,
+		ID:     id,
 	}
 	a.builder.ofFlow.lastAction = group
 	return a.builder
+}
+
+// TODO: Add doc
+func (a *ofFlowAction) Learn(id TableIDType, priority uint16,idleTimeout uint16 ,cookie uint64) LearnAction {
+	la := &ofLearnAction{
+		flowBuilder: a.builder,
+		nxLearn:     ofctrl.NewLearnAction(uint8(id), priority, idleTimeout, 0, 0, 0, cookie),
+	}
+	la.nxLearn.DeleteLearnedFlowsAfterDeletion()
+	return la
+}
+
+type ofLearnAction struct {
+	flowBuilder *ofFlowBuilder
+	nxLearn     *ofctrl.FlowLearn
+}
+
+func (a *ofLearnAction) MatchLearntTCPDSTPort() LearnAction {
+	ethTypeVal := make([]byte, 2)
+	binary.BigEndian.PutUint16(ethTypeVal, 0x800)
+	// TODO: explain the cap
+	ipTypeVal := make([]byte, 2)
+	ipTypeVal[1] = byte(ofctrl.IP_PROTO_TCP)
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_ETH_TYPE"}, 2*8, nil, ethTypeVal)
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_IP_PROTO"}, 1*8, nil, ipTypeVal)
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_TCP_DST"}, 2*8, &ofctrl.LearnField{Name: "NXM_OF_TCP_DST"}, nil)
+	return a
+}
+
+func (a *ofLearnAction) MatchLearntUDPDSTPort() LearnAction {
+	ethTypeVal := make([]byte, 2)
+	binary.BigEndian.PutUint16(ethTypeVal, 0x800)
+	// TODO: explain the cap
+	ipTypeVal := make([]byte, 2)
+	ipTypeVal[1] = byte(ofctrl.IP_PROTO_UDP)
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_ETH_TYPE"}, 2*8, nil, ethTypeVal)
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_IP_PROTO"}, 1*8, nil, ipTypeVal)
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_UDP_DST"}, 2*8, &ofctrl.LearnField{Name: "NXM_OF_UDP_DST"}, nil)
+	return a
+}
+
+func (a *ofLearnAction) MatchLearntSrcIP() LearnAction {
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_IP_SRC",}, 4*8, &ofctrl.LearnField{Name: "NXM_OF_IP_SRC"}, nil)
+	return a
+}
+
+func (a *ofLearnAction) MatchLearntDstIP() LearnAction {
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: "NXM_OF_IP_DST",}, 4*8, &ofctrl.LearnField{Name: "NXM_OF_IP_DST"}, nil)
+	return a
+}
+
+func (a *ofLearnAction) MatchReg(regID int, data uint32) LearnAction {
+	regName := fmt.Sprintf("NXM_NX_REG%d", regID)
+	valBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(valBuf, data)
+	a.nxLearn.AddMatch(&ofctrl.LearnField{Name: regName}, 4*8, nil, valBuf)
+	return a
+}
+
+func (a *ofLearnAction) LoadRegToReg(fromRegID, toRegID int) LearnAction {
+	fromRegName := fmt.Sprintf("NXM_NX_REG%d", fromRegID)
+	toRegName := fmt.Sprintf("NXM_NX_REG%d", toRegID)
+	a.nxLearn.AddLoadAction(&ofctrl.LearnField{Name: fromRegName}, 4*8, &ofctrl.LearnField{Name: toRegName}, nil)
+	return a
+}
+
+func (a *ofLearnAction) LoadReg(regID int, data uint32) LearnAction {
+	regName := fmt.Sprintf("NXM_NX_REG%d", regID)
+	valBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(valBuf, data)
+	a.nxLearn.AddLoadAction(&ofctrl.LearnField{Name: regName}, 4*8, nil, valBuf)
+	return a
+}
+
+func (a *ofLearnAction) Done() FlowBuilder {
+	a.flowBuilder.Learn(a.nxLearn)
+	return a.flowBuilder
 }
 
 func getFieldRange(name string) (*openflow13.MatchField, Range, error) {

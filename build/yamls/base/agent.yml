@@ -59,7 +59,7 @@ spec:
         - name: antrea-agent
           image: antrea
           command: ["antrea-agent"]
-          args: ["--config", "/etc/antrea/antrea-agent.conf"]
+          args: ["--config", "/etc/antrea/antrea-agent.conf", "-v", "10000"]
           env:
             # Provide pod and node information for clusterinformation CRD.
             - name: POD_NAME

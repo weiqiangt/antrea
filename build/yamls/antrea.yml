@@ -97,6 +97,8 @@ rules:
   resources:
   - nodes
   - pods
+  - endpoints
+  - services
   verbs:
   - get
   - watch
@@ -434,6 +436,8 @@ spec:
       - args:
         - --config
         - /etc/antrea/antrea-agent.conf
+        - -v
+        - "10000"
         command:
         - antrea-agent
         env:

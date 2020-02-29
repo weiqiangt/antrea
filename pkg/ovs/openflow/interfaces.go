@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-type protocol = string
+type Protocol = string
 type TableIDType uint8
 type GroupIDType = uint32
 
@@ -29,12 +29,12 @@ type MissActionType uint32
 type Range [2]uint32
 
 const (
-	ProtocolIP   protocol = "ip"
-	ProtocolARP  protocol = "arp"
-	ProtocolTCP  protocol = "tcp"
-	ProtocolUDP  protocol = "udp"
-	ProtocolSCTP protocol = "sctp"
-	ProtocolICMP protocol = "icmp"
+	ProtocolIP   Protocol = "ip"
+	ProtocolARP  Protocol = "arp"
+	ProtocolTCP  Protocol = "tcp"
+	ProtocolUDP  Protocol = "udp"
+	ProtocolSCTP Protocol = "sctp"
+	ProtocolICMP Protocol = "icmp"
 )
 
 const (
@@ -150,10 +150,11 @@ type Action interface {
 	Normal() FlowBuilder
 	Conjunction(conjID uint32, clauseID uint8, nClause uint8) FlowBuilder
 	Group(id GroupIDType) FlowBuilder
+	Learn(id TableIDType, priority uint16, idleTimeout uint16, cookie uint64) LearnAction
 }
 
 type FlowBuilder interface {
-	MatchProtocol(name protocol) FlowBuilder
+	MatchProtocol(name Protocol) FlowBuilder
 	MatchReg(regID int, data uint32) FlowBuilder
 	MatchRegRange(regID int, data uint32, rng Range) FlowBuilder
 	MatchInPort(inPort uint32) FlowBuilder
@@ -184,8 +185,20 @@ type FlowBuilder interface {
 	Done() Flow
 }
 
+type LearnAction interface {
+	MatchLearntTCPDSTPort() LearnAction
+	MatchLearntUDPDSTPort() LearnAction
+	MatchLearntSrcIP() LearnAction
+	MatchLearntDstIP() LearnAction
+	MatchReg(regID int, data uint32) LearnAction
+	LoadReg(regID int, data uint32) LearnAction
+	LoadRegToReg(fromRegID, toRegID int) LearnAction
+	Done() FlowBuilder
+}
+
 type Group interface {
 	Entry
+	ResetBucket() Group
 	Bucket() BucketBuilder
 }
 

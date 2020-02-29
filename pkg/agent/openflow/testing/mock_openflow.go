@@ -24,6 +24,8 @@ import (
 	config "github.com/vmware-tanzu/antrea/pkg/agent/config"
 	types "github.com/vmware-tanzu/antrea/pkg/agent/types"
 	openflow "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
+	v1 "k8s.io/api/core/v1"
+	proxy "k8s.io/kubernetes/pkg/proxy"
 	net "net"
 	reflect "reflect"
 )
@@ -220,6 +222,20 @@ func (mr *MockClientMockRecorder) InstallPolicyRuleFlows(arg0, arg1 interface{})
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallPolicyRuleFlows", reflect.TypeOf((*MockClient)(nil).InstallPolicyRuleFlows), arg0, arg1)
 }
 
+// InstallServiceFlows mocks base method
+func (m *MockClient) InstallServiceFlows(arg0 uint32, arg1 net.IP, arg2 uint16, arg3 v1.Protocol) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InstallServiceFlows", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InstallServiceFlows indicates an expected call of InstallServiceFlows
+func (mr *MockClientMockRecorder) InstallServiceFlows(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallServiceFlows", reflect.TypeOf((*MockClient)(nil).InstallServiceFlows), arg0, arg1, arg2, arg3)
+}
+
 // IsConnected mocks base method
 func (m *MockClient) IsConnected() bool {
 	m.ctrl.T.Helper()
@@ -286,6 +302,39 @@ func (m *MockClient) UninstallPolicyRuleFlows(arg0 uint32) error {
 func (mr *MockClientMockRecorder) UninstallPolicyRuleFlows(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UninstallPolicyRuleFlows", reflect.TypeOf((*MockClient)(nil).UninstallPolicyRuleFlows), arg0)
+}
+
+// UninstallServiceFlows mocks base method
+func (m *MockClient) UninstallServiceFlows(arg0 uint32, arg1 net.IP, arg2 uint16) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UninstallServiceFlows", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UninstallServiceFlows indicates an expected call of UninstallServiceFlows
+func (mr *MockClientMockRecorder) UninstallServiceFlows(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UninstallServiceFlows", reflect.TypeOf((*MockClient)(nil).UninstallServiceFlows), arg0, arg1, arg2)
+}
+
+// UpdateEndpointsGroup mocks base method
+func (m *MockClient) UpdateEndpointsGroup(arg0 uint32, arg1 v1.Protocol, arg2 ...proxy.Endpoint) error {
+	m.ctrl.T.Helper()
+	varargs := []interface{}{arg0, arg1}
+	for _, a := range arg2 {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "UpdateEndpointsGroup", varargs...)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateEndpointsGroup indicates an expected call of UpdateEndpointsGroup
+func (mr *MockClientMockRecorder) UpdateEndpointsGroup(arg0, arg1 interface{}, arg2 ...interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	varargs := append([]interface{}{arg0, arg1}, arg2...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateEndpointsGroup", reflect.TypeOf((*MockClient)(nil).UpdateEndpointsGroup), varargs...)
 }
 
 // MockEntryOperations is a mock of EntryOperations interface
