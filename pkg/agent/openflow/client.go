@@ -79,6 +79,10 @@ type Client interface {
 	// containerID. UninstallPodFlows will do nothing if no connection to the Pod was established.
 	UninstallPodFlows(containerID string) error
 
+	// TODO: Implement these two.
+	InstallServiceFlows() error
+	UninstallServiceFlows() error
+
 	// GetFlowTableStatus should return an array of flow table status, all existing flow tables should be included in the list.
 	GetFlowTableStatus() []binding.TableStatus
 
