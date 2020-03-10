@@ -62,6 +62,26 @@ func waitForPodInNamespace(k8s *Kubernetes, ns string, pod string) error {
 	}
 }
 
+func waitForHTTPServers(k8s *Kubernetes) error {
+	const maxTries = 10
+	const sleepInterval = 1 * time.Second
+	log.Infof("waiting for HTTP servers (ports 80 and 81) to become ready")
+	var wrong int
+	for i := 0; i < maxTries; i++ {
+		reachability := NewReachability(allPods, true)
+		validate(k8s, reachability, 80)
+		validate(k8s, reachability, 81)
+		_, wrong, _ = reachability.Summary()
+		if wrong == 0 {
+			log.Infof("all HTTP servers are ready")
+			return nil
+		}
+		log.Debugf("%d HTTP servers not ready", wrong)
+		time.Sleep(sleepInterval)
+	}
+	return errors.Errorf("after %d tries, %d HTTP servers are not ready", maxTries, wrong)
+}
+
 func bootstrap(k8s *Kubernetes) error {
 	for _, ns := range namespaces {
 		_, err := k8s.CreateOrUpdateNamespace(ns, map[string]string{"ns": ns})
@@ -82,6 +102,12 @@ func bootstrap(k8s *Kubernetes) error {
 		if err != nil {
 			return errors.WithMessagef(err, "unable to wait for pod %s/%s", pod.Namespace(), pod.PodName())
 		}
+	}
+
+	// Ensure that all the HTTP servers have time to start properly.
+	// See https://github.com/vmware-tanzu/antrea/issues/472.
+	if err := waitForHTTPServers(k8s); err != nil {
+		return err
 	}
 
 	return nil
@@ -124,19 +150,19 @@ func main() {
 	failOnError(err)
 
 	testList := []*TestCase{
-		&TestCase{"DefaultDeny", testDefaultDeny()},
-		&TestCase{"PodLabelWhitelistingFromBToA", testPodLabelWhitelistingFromBToA()},
-		&TestCase{"InnerNamespaceTraffic", testInnerNamespaceTraffic()},
-		&TestCase{"EnforcePodAndNSSelector", testEnforcePodAndNSSelector()},
-		&TestCase{"EnforcePodOrNSSelector", testEnforcePodOrNSSelector()},
-		&TestCase{"PortsPolicies", testPortsPolicies()},
-		&TestCase{"AllowAll", testAllowAll()},
-		&TestCase{"NamedPort", testNamedPort()},
-		&TestCase{"NamedPortWithNamespace", testNamedPortWNamespace()},
-		&TestCase{"EgressOnNamedPort", testEgressOnNamedPort()},
-		&TestCase{"EgressAndIngressIntegration", testEgressAndIngressIntegration()},
-		&TestCase{"AllowAllPrecedenceIngress", testAllowAllPrecedenceIngress()},
-		&TestCase{"PortsPoliciesStackedOrUpdated", testPortsPoliciesStackedOrUpdated()},
+		{"DefaultDeny", testDefaultDeny()},
+		{"PodLabelWhitelistingFromBToA", testPodLabelWhitelistingFromBToA()},
+		{"InnerNamespaceTraffic", testInnerNamespaceTraffic()},
+		{"EnforcePodAndNSSelector", testEnforcePodAndNSSelector()},
+		{"EnforcePodOrNSSelector", testEnforcePodOrNSSelector()},
+		{"PortsPolicies", testPortsPolicies()},
+		{"AllowAll", testAllowAll()},
+		{"NamedPort", testNamedPort()},
+		{"NamedPortWithNamespace", testNamedPortWNamespace()},
+		{"EgressOnNamedPort", testEgressOnNamedPort()},
+		{"EgressAndIngressIntegration", testEgressAndIngressIntegration()},
+		{"AllowAllPrecedenceIngress", testAllowAllPrecedenceIngress()},
+		{"PortsPoliciesStackedOrUpdated", testPortsPoliciesStackedOrUpdated()},
 		//testMultipleUpdates,  // Todo: not suitable in new stacked structure
 	}
 	executeTests(k8s, testList)
@@ -145,8 +171,10 @@ func main() {
 
 func printResults(testList []*TestCase) {
 	fmt.Printf("\n\n---------------- Test Results ------------------\n\n")
+	failCount := 0
 	for _, testCase := range testList {
 		fmt.Printf("Test %s:\n", testCase.Name)
+		testFailed := false
 		for _, step := range testCase.Steps {
 			_, wrong, comparison := step.Reachability.Summary()
 			var result string
@@ -154,13 +182,19 @@ func printResults(testList []*TestCase) {
 				result = "success"
 			} else {
 				result = fmt.Sprintf("failure -- %d wrong results", wrong)
+				testFailed = true
 			}
 			fmt.Printf("\tStep %s on port %d, duration %d seconds, result: %s\n", step.Name, step.Port, int(step.Duration.Seconds()), result)
 			fmt.Printf("\n%s\n", comparison.PrettyPrint("\t\t"))
 			fmt.Printf("\n\n")
 		}
+		if testFailed {
+			failCount++
+		}
 		fmt.Printf("\n\n\n")
 	}
+	fmt.Printf("=== TEST FAILURES: %d/%d ===\n", failCount, len(testList))
+	fmt.Printf("\n\n\n")
 }
 
 // executeTests runs all the tests in testList and print results
@@ -328,21 +362,21 @@ func testEgressAndIngressIntegration() []*TestStep {
 	reachability3 := NewReachability(allPods, true)
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80 -- 1",
 			reachability1,
 			policy1,
 			p80,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 80 -- 2",
 			reachability2,
 			policy2,
 			p80,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 80 -- 3",
 			reachability3,
 			policy3,
@@ -374,14 +408,14 @@ func testAllowAllPrecedenceIngress() []*TestStep {
 	reachability2 := NewReachability(allPods, true)
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 81",
 			reachability1,
 			policy1,
 			p81,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 80",
 			reachability2,
 			policy2,
@@ -421,14 +455,14 @@ func testEgressOnNamedPort() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability80,
 			builder.Get(),
 			80,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 81",
 			reachability81(),
 			builder.Get(),
@@ -492,14 +526,14 @@ func testNamedPortWNamespace() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability80(),
 			builder.Get(),
 			80,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 81",
 			reachability81(),
 			builder.Get(),
@@ -528,14 +562,14 @@ func testNamedPort() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability80,
 			builder.Get(),
 			80,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 81",
 			reachability81(),
 			builder.Get(),
@@ -553,7 +587,7 @@ func testAllowAll() []*TestStep {
 
 	reachability := NewReachability(allPods, true)
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability,
 			builder.Get(),
@@ -600,21 +634,21 @@ func testPortsPoliciesStackedOrUpdated() []*TestStep {
 	// At this point, if we stacked, make sure 80 is still unblocked
 	// Whereas if we DIDNT stack, make sure 80 is blocked.
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 81 -- blocked",
 			blocked(), // 81 blocked
 			policy1,
 			81,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 81 -- unblocked",
 			unblocked(), // 81 open now
 			policy2,
 			81,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 80 -- blocked",
 			blocked(),
 			policy2,
@@ -648,14 +682,14 @@ func testPortsPolicies() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability1(),
 			builder.Get(),
 			80,
 			0,
 		},
-		&TestStep{
+		{
 			"Port 81",
 			// Applying the same nw policy to test a different port
 			reachability2(),
@@ -683,7 +717,7 @@ func testEnforcePodAndNSSelector() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),
@@ -713,7 +747,7 @@ func testEnforcePodOrNSSelector() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),
@@ -745,7 +779,7 @@ func testNamespaceSelectorMatchExpressions() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),
@@ -776,7 +810,7 @@ func testPodSelectorMatchExpressions() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),
@@ -802,7 +836,7 @@ func testIntraNamespaceTrafficOnly() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),
@@ -829,7 +863,7 @@ func testInnerNamespaceTraffic() []*TestStep {
 	}
 
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),
@@ -857,7 +891,7 @@ func testDefaultDeny() []*TestStep {
 		return reachability
 	}
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),
@@ -886,7 +920,7 @@ func testPodLabelWhitelistingFromBToA() []*TestStep {
 		return reachability
 	}
 	return []*TestStep{
-		&TestStep{
+		{
 			"Port 80",
 			reachability(),
 			builder.Get(),

@@ -1,6 +1,6 @@
 # A Truth-table based Network Policy construction and validation library.
 
-This repo implements upstream [CNI testing initiative](https://github.com/vmware-tanzu/antrea/blob/community-network-policy-tests/docs/design/cni-testing-initiative-upstream.md), a fast, comprehensive truth table matrix for network policies which can be used to ensure that your CNI provider is fast, reliable, and air-tight.
+This repo implements upstream [CNI testing initiative](https://github.com/kubernetes/enhancements/pull/1568), a fast, comprehensive truth table matrix for network policies which can be used to ensure that your CNI provider is fast, reliable, and air-tight.
 
 ## A super-simple builder for experimenting with and validating your own network policies
 
@@ -106,7 +106,7 @@ kubectl apply -f https://raw.githubusercontent.com/vmware-tanzu/antrea/master/ha
 Now, look at the results of the network policy probe:
 
 ```
- kubectl logs `kubectl get pods -n kube-system | grep netpol | cut -d' ' -f 1` -n kube-system  
+kubectl logs -n kube-system job.batch/netpol
 ```
  
 ## Developers
