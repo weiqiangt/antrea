@@ -101,8 +101,19 @@ information.
 To deploy Antrea in a [Kind](https://github.com/kubernetes-sigs/kind) cluster,
 please refer to this [guide](/docs/kind.md).
 
+### Deploying Antrea in EKS and GKE
+
+Antrea can be deployed in NetworkPolicy only mode to an EKS cluster or a GKE
+cluster, and enforce NetworkPolicies for the cluster. To deploy Antrea in an
+EKS cluster, please refer to [the EKS installation guide](/docs/eks-installation.md).
+To deploy Antrea in a GKE cluster, please refer to [the GKE installation guide](/docs/gke-installation.md).
 
 ### Deploying Antrea with IPsec Encyption
 
 Antrea supports encrypting GRE tunnel traffic with IPsec. To deploy Antrea with
 IPsec encyption enabled, please refer to this [guide](/docs/ipsec-tunnel.md).
+
+### Antctl: Installation and Usage
+
+To use antctl, the Antrea command-line tool, please refer to this
+[guide](/docs/antctl.md).

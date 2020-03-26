@@ -1,12 +1,13 @@
-SHELL			:= /bin/bash
+SHELL              := /bin/bash
 # go options
-GO              ?= go
-LDFLAGS         :=
-GOFLAGS         :=
-BINDIR          := $(CURDIR)/bin
-GO_FILES        := $(shell find . -type d -name '.cache' -prune -o -type f -name '*.go' -print)
-GOPATH          ?= $$($(GO) env GOPATH)
-DOCKER_CACHE    := $(CURDIR)/.cache
+GO                 ?= go
+LDFLAGS            :=
+GOFLAGS            :=
+BINDIR             ?= $(CURDIR)/bin
+GO_FILES           := $(shell find . -type d -name '.cache' -prune -o -type f -name '*.go' -print)
+GOPATH             ?= $$($(GO) env GOPATH)
+DOCKER_CACHE       := $(CURDIR)/.cache
+ANTCTL_BINARY_NAME ?= antctl
 
 .PHONY: all
 all: build
@@ -94,7 +95,6 @@ docker-tidy: $(DOCKER_CACHE)
 .linux-bin:
 	GOBIN=$(BINDIR) $(GO) install $(GOFLAGS) -ldflags '$(LDFLAGS)' github.com/vmware-tanzu/antrea/cmd/...
 
-# TODO: strip binary when building releases
 ANTCTL_BINARIES := antctl-darwin antctl-linux antctl-windows
 $(ANTCTL_BINARIES): antctl-%:
 	@GOOS=$* $(GO) build -o $(BINDIR)/$@ $(GOFLAGS) -ldflags '$(LDFLAGS)' github.com/vmware-tanzu/antrea/cmd/antctl
@@ -106,6 +106,10 @@ $(ANTCTL_BINARIES): antctl-%:
 
 .PHONY: antctl
 antctl: $(ANTCTL_BINARIES)
+
+.PHONY: antctl-release
+antctl-release:
+	@$(GO) build -o $(BINDIR)/$(ANTCTL_BINARY_NAME) $(GOFLAGS) -ldflags '-s -w $(LDFLAGS)' github.com/vmware-tanzu/antrea/cmd/antctl
 
 .PHONY: .linux-test-unit
 .linux-test-unit:
@@ -183,6 +187,8 @@ manifest:
 	@echo "===> Generating dev manifest for Antrea <==="
 	$(CURDIR)/hack/generate-manifest.sh --mode dev > build/yamls/antrea.yml
 	$(CURDIR)/hack/generate-manifest.sh --mode dev --ipsec > build/yamls/antrea-ipsec.yml
+	$(CURDIR)/hack/generate-manifest.sh --mode dev --encap-mode networkPolicyOnly > build/yamls/antrea-eks.yml
+	$(CURDIR)/hack/generate-manifest.sh --mode dev --cloud GKE --encap-mode noEncap > build/yamls/antrea-gke.yml
 	$(CURDIR)/hack/generate-manifest-octant.sh --mode dev > build/yamls/antrea-octant.yml
 
 .PHONY: octant-antrea-ubuntu
@@ -190,3 +196,8 @@ octant-antrea-ubuntu:
 	@echo "===> Building antrea/octant-antrea-ubuntu Docker image <==="
 	docker build -t antrea/octant-antrea-ubuntu:$(DOCKER_IMG_VERSION) -f build/images/Dockerfile.octant.ubuntu .
 	docker tag antrea/octant-antrea-ubuntu:$(DOCKER_IMG_VERSION) antrea/octant-antrea-ubuntu
+
+.PHONY: verify-spelling
+verify-spelling:
+	@echo "===> Verifying spellings <==="
+	$(CURDIR)/hack/verify-spelling.sh

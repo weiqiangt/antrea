@@ -11,12 +11,6 @@ metadata:
   name: antctl
 rules:
   - apiGroups:
-      - clusterinformation.antrea.tanzu.vmware.com
-    resources:
-      - antreacontrollerinfos
-    verbs:
-      - get
-  - apiGroups:
       - networking.antrea.tanzu.vmware.com
     resources:
       - networkpolicies
@@ -25,6 +19,12 @@ rules:
     verbs:
       - get
       - list
+  - apiGroups:
+      - system.antrea.tanzu.vmware.com
+    resources:
+      - controllerinfos
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -45,5 +45,5 @@ subjects:
     # This is to allow antctl to be executed inside the Antrea Controller Pod
     # and authenticate with Controller API server using the Controller's
     # ServiceAccount token.
-    name: anntrea-controller
+    name: antrea-controller
     namespace: kube-system

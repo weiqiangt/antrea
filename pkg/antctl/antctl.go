@@ -17,17 +17,16 @@ package antctl
 import (
 	"reflect"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/vmware-tanzu/antrea/pkg/agent/apiserver/handlers/agentinfo"
 	"github.com/vmware-tanzu/antrea/pkg/agent/apiserver/handlers/podinterface"
-
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/addressgroup"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/appliedtogroup"
+	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/controllerinfo"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/networkpolicy"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/version"
-	clusterinfov1beta1 "github.com/vmware-tanzu/antrea/pkg/apis/clusterinformation/v1beta1"
 	networkingv1beta1 "github.com/vmware-tanzu/antrea/pkg/apis/networking/v1beta1"
+	systemv1beta1 "github.com/vmware-tanzu/antrea/pkg/apis/system/v1beta1"
+	controllerinforest "github.com/vmware-tanzu/antrea/pkg/apiserver/registry/system/controllerinfo"
 	"github.com/vmware-tanzu/antrea/pkg/client/clientset/versioned/scheme"
 )
 
@@ -42,12 +41,8 @@ var CommandList = &commandList{
 			commandGroup: flat,
 			controllerEndpoint: &endpoint{
 				resourceEndpoint: &resourceEndpoint{
-					resourceName: "antrea-controller",
-					groupVersionResource: &schema.GroupVersionResource{
-						Group:    clusterinfov1beta1.SchemeGroupVersion.Group,
-						Version:  clusterinfov1beta1.SchemeGroupVersion.Version,
-						Resource: "antreacontrollerinfos",
-					},
+					resourceName:         controllerinforest.ControllerInfoResourceName,
+					groupVersionResource: &systemv1beta1.ControllerInfoVersionResource,
 				},
 				addonTransform: version.ControllerTransform,
 			},
@@ -60,17 +55,13 @@ var CommandList = &commandList{
 			transformedResponse: reflect.TypeOf(version.Response{}),
 		},
 		{
-			use:          "network-policy",
+			use:          "networkpolicy",
 			short:        "Print network policies",
 			long:         "Print network policies in ${component}",
 			commandGroup: get,
 			controllerEndpoint: &endpoint{
 				resourceEndpoint: &resourceEndpoint{
-					groupVersionResource: &schema.GroupVersionResource{
-						Group:    networkingv1beta1.SchemeGroupVersion.Group,
-						Version:  networkingv1beta1.SchemeGroupVersion.Version,
-						Resource: "networkpolicies",
-					},
+					groupVersionResource: &networkingv1beta1.NetworkPolicyVersionResource,
 				},
 				addonTransform: networkpolicy.Transform,
 			},
@@ -90,17 +81,13 @@ var CommandList = &commandList{
 			transformedResponse: reflect.TypeOf(networkpolicy.Response{}),
 		},
 		{
-			use:          "applied-to-group",
-			short:        "Print applied-to-groups",
-			long:         "Print applied-to-groups in ${component}",
+			use:          "appliedtogroup",
+			short:        "Print appliedto groups",
+			long:         "Print appliedto groups in ${component}",
 			commandGroup: get,
 			controllerEndpoint: &endpoint{
 				resourceEndpoint: &resourceEndpoint{
-					groupVersionResource: &schema.GroupVersionResource{
-						Group:    networkingv1beta1.SchemeGroupVersion.Group,
-						Version:  networkingv1beta1.SchemeGroupVersion.Version,
-						Resource: "appliedtogroups",
-					},
+					groupVersionResource: &networkingv1beta1.AppliedToGroupVersionResource,
 				},
 				addonTransform: appliedtogroup.Transform,
 			},
@@ -120,17 +107,13 @@ var CommandList = &commandList{
 			transformedResponse: reflect.TypeOf(appliedtogroup.Response{}),
 		},
 		{
-			use:          "address-group",
+			use:          "addressgroup",
 			short:        "Print address groups",
 			long:         "Print address groups in ${component}",
 			commandGroup: get,
 			controllerEndpoint: &endpoint{
 				resourceEndpoint: &resourceEndpoint{
-					groupVersionResource: &schema.GroupVersionResource{
-						Group:    networkingv1beta1.SchemeGroupVersion.Group,
-						Version:  networkingv1beta1.SchemeGroupVersion.Version,
-						Resource: "addressgroups",
-					},
+					groupVersionResource: &networkingv1beta1.AddressGroupVersionResource,
 				},
 				addonTransform: addressgroup.Transform,
 			},
@@ -150,42 +133,56 @@ var CommandList = &commandList{
 			transformedResponse: reflect.TypeOf(addressgroup.Response{}),
 		},
 		{
-			use:   "agent-info",
+			use:   "controllerinfo",
+			short: "Print Antrea controller's basic information",
+			long:  "Print Antrea controller's basic information including version, deployment, NetworkPolicy controller, ControllerConditions, etc.",
+			controllerEndpoint: &endpoint{
+				resourceEndpoint: &resourceEndpoint{
+					resourceName:         controllerinforest.ControllerInfoResourceName,
+					groupVersionResource: &systemv1beta1.ControllerInfoVersionResource,
+				},
+				addonTransform: controllerinfo.Transform,
+			},
+			commandGroup:        get,
+			transformedResponse: reflect.TypeOf(controllerinfo.Response{}),
+		},
+		{
+			use:   "agentinfo",
 			short: "Print agent's basic information",
-			long:  "Print agent's basic information including version, node subnet, OVS info, AgentConditions, etc.",
+			long:  "Print agent's basic information including version, deployment, Node subnet, OVS info, AgentConditions, etc.",
 			agentEndpoint: &endpoint{
 				nonResourceEndpoint: &nonResourceEndpoint{
 					path:       "/agentinfo",
 					outputType: single,
 				},
 			},
-			commandGroup:        flat,
+			commandGroup:        get,
 			transformedResponse: reflect.TypeOf(agentinfo.AntreaAgentInfoResponse{}),
 		},
 		{
-			use:   "pod-interface",
-			short: "Print Pod's basic interface information",
+			use:   "podinterface",
+			short: "Print Pod's network interface information",
 			long:  "Print information about the network interface(s) created by the Antrea agent for the specified Pod.",
 			example: `  Get a pod-interface
-  $ antctl get pod-interface pod0 -n ns0
-  Get the list of pod-interfaces in a namespace
-  $ antctl get pod-interface -n ns0
-  Get the list of pod-interfaces whose names match in all namespaces
-  $ antctl get pod-interface pod0
-  Get the list of pod-interfaces in all namespaces
-  $ antctl get pod-interface`,
+  $ antctl get podinterface pod1 -n ns1
+  Get the list of podinterfaces in a Namespace
+  $ antctl get podinterface -n ns1
+  Get the list of podinterfaces whose names match in all Namespaces
+  $ antctl get podinterface pod1
+  Get the list of podinterfaces in all Namespaces
+  $ antctl get podinterface`,
 			agentEndpoint: &endpoint{
 				nonResourceEndpoint: &nonResourceEndpoint{
 					path: "/podinterfaces",
 					params: []flagInfo{
 						{
 							name:  "name",
-							usage: "Retrieve Pod interface by name. If present, make sure namespace is provided.",
+							usage: "Retrieve Pod interface by name. If present, Namespace must be provided.",
 							arg:   true,
 						},
 						{
 							name:      "namespace",
-							usage:     "Get all Pod interfaces from specific Namespace",
+							usage:     "Get Pod interfaces from specific Namespace",
 							shorthand: "n",
 						},
 					},
