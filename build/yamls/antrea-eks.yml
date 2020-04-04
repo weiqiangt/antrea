@@ -286,14 +286,22 @@ data:
     # networkPolicyOnly: Antrea enforces NetworkPolicy only, and utilizes CNI chaining and delegates Pod IPAM and connectivity to primary CNI.
     #
     trafficEncapMode: networkPolicyOnly
-  antrea-cni.conf: |
+  antrea-cni.conflist: |
     {
         "cniVersion":"0.3.0",
         "name": "antrea",
-        "type": "antrea",
-        "ipam": {
-            "type": "host-local"
-        }
+        "plugins": [
+            {
+                "type": "antrea",
+                "ipam": {
+                    "type": "host-local"
+                }
+            },
+            {
+                "type": "portmap",
+                "capabilities": {"portMappings": true}
+            }
+        ]
     }
   antrea-controller.conf: ""
 kind: ConfigMap
@@ -301,7 +309,7 @@ metadata:
   annotations: {}
   labels:
     app: antrea
-  name: antrea-config-57hfkfg8kd
+  name: antrea-config-5f8t824tmg
   namespace: kube-system
 ---
 apiVersion: v1
@@ -346,6 +354,10 @@ spec:
       - args:
         - --config
         - /etc/antrea/antrea-controller.conf
+        - --logtostderr=false
+        - --log_dir
+        - /var/log/antrea
+        - --alsologtostderr
         command:
         - antrea-controller
         env:
@@ -382,6 +394,8 @@ spec:
           name: antrea-config
           readOnly: true
           subPath: antrea-controller.conf
+        - mountPath: /var/log/antrea
+          name: host-var-log-antrea
       hostNetwork: true
       nodeSelector:
         kubernetes.io/os: linux
@@ -394,8 +408,12 @@ spec:
         key: node-role.kubernetes.io/master
       volumes:
       - configMap:
-          name: antrea-config-57hfkfg8kd
+          name: antrea-config-5f8t824tmg
         name: antrea-config
+      - hostPath:
+          path: /var/log/antrea
+          type: DirectoryOrCreate
+        name: host-var-log-antrea
 ---
 apiVersion: apiregistration.k8s.io/v1
 kind: APIService
@@ -452,6 +470,10 @@ spec:
       - args:
         - --config
         - /etc/antrea/antrea-agent.conf
+        - --logtostderr=false
+        - --log_dir
+        - /var/log/antrea
+        - --alsologtostderr
         command:
         - antrea-agent
         env:
@@ -505,6 +527,8 @@ spec:
         - mountPath: /var/lib/cni
           name: host-var-run-antrea
           subPath: cni
+        - mountPath: /var/log/antrea
+          name: host-var-log-antrea
         - mountPath: /host/proc
           name: host-proc
           readOnly: true
@@ -553,10 +577,10 @@ spec:
             add:
             - SYS_MODULE
         volumeMounts:
-        - mountPath: /etc/antrea/antrea-cni.conf
+        - mountPath: /etc/antrea/antrea-cni.conflist
           name: antrea-config
           readOnly: true
-          subPath: antrea-cni.conf
+          subPath: antrea-cni.conflist
         - mountPath: /host/etc/cni/net.d
           name: host-cni-conf
         - mountPath: /host/opt/cni/bin
@@ -578,7 +602,7 @@ spec:
         operator: Exists
       volumes:
       - configMap:
-          name: antrea-config-57hfkfg8kd
+          name: antrea-config-5f8t824tmg
         name: antrea-config
       - hostPath:
           path: /etc/cni/net.d

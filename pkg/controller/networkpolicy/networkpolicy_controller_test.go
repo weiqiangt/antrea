@@ -53,10 +53,11 @@ type networkPolicyController struct {
 	appliedToGroupStore        storage.Interface
 	addressGroupStore          storage.Interface
 	internalNetworkPolicyStore storage.Interface
+	informerFactory            informers.SharedInformerFactory
 }
 
-func newController() (*fake.Clientset, *networkPolicyController) {
-	client := newClientset()
+func newController(objects ...runtime.Object) (*fake.Clientset, *networkPolicyController) {
+	client := newClientset(objects...)
 	informerFactory := informers.NewSharedInformerFactory(client, informerDefaultResync)
 	appliedToGroupStore := store.NewAppliedToGroupStore()
 	addressGroupStore := store.NewAddressGroupStore()
@@ -73,11 +74,12 @@ func newController() (*fake.Clientset, *networkPolicyController) {
 		appliedToGroupStore,
 		addressGroupStore,
 		internalNetworkPolicyStore,
+		informerFactory,
 	}
 }
 
-func newClientset() *fake.Clientset {
-	client := fake.NewSimpleClientset()
+func newClientset(objects ...runtime.Object) *fake.Clientset {
+	client := fake.NewSimpleClientset(objects...)
 
 	client.PrependReactor("create", "networkpolicies", k8stesting.ReactionFunc(func(action k8stesting.Action) (bool, runtime.Object, error) {
 		np := action.(k8stesting.CreateAction).GetObject().(*networkingv1.NetworkPolicy)
@@ -2189,6 +2191,61 @@ func TestIPStrToIPAddress(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeleteFinalStateUnknownPod(t *testing.T) {
+	_, c := newController()
+	c.heartbeatCh = make(chan heartbeat, 2)
+	ns := metav1.NamespaceDefault
+	pod := getPod("p1", ns, "", "1.1.1.1", false)
+	c.addPod(pod)
+	key, _ := cache.MetaNamespaceKeyFunc(pod)
+	c.deletePod(cache.DeletedFinalStateUnknown{Key: key, Obj: pod})
+	close(c.heartbeatCh)
+	var ok bool
+	_, ok = <-c.heartbeatCh
+	assert.True(t, ok, "Missing event on channel")
+	_, ok = <-c.heartbeatCh
+	assert.True(t, ok, "Missing event on channel")
+}
+
+func TestDeleteFinalStateUnknownNamespace(t *testing.T) {
+	_, c := newController()
+	c.heartbeatCh = make(chan heartbeat, 2)
+	ns := &v1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "nsA",
+		},
+	}
+	c.addNamespace(ns)
+	c.deleteNamespace(cache.DeletedFinalStateUnknown{Key: "nsA", Obj: ns})
+	close(c.heartbeatCh)
+	var ok bool
+	_, ok = <-c.heartbeatCh
+	assert.True(t, ok, "Missing event on channel")
+	_, ok = <-c.heartbeatCh
+	assert.True(t, ok, "Missing event on channel")
+}
+
+func TestDeleteFinalStateUnknownNetworkPolicy(t *testing.T) {
+	_, c := newController()
+	c.heartbeatCh = make(chan heartbeat, 2)
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "nsA", Name: "npA", UID: "uidA"},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+		},
+	}
+	c.addNetworkPolicy(np)
+	key, _ := cache.MetaNamespaceKeyFunc(np)
+	c.deleteNetworkPolicy(cache.DeletedFinalStateUnknown{Key: key, Obj: np})
+	close(c.heartbeatCh)
+	var ok bool
+	_, ok = <-c.heartbeatCh
+	assert.True(t, ok, "Missing event on channel")
+	_, ok = <-c.heartbeatCh
+	assert.True(t, ok, "Missing event on channel")
 }
 
 // util functions for testing.
