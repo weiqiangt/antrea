@@ -45,12 +45,14 @@ var CommandList = &commandList{
 					groupVersionResource: &systemv1beta1.ControllerInfoVersionResource,
 				},
 				addonTransform: version.ControllerTransform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			agentEndpoint: &endpoint{
 				nonResourceEndpoint: &nonResourceEndpoint{
 					path: "/version",
 				},
 				addonTransform: version.AgentTransform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			transformedResponse: reflect.TypeOf(version.Response{}),
 		},
@@ -65,6 +67,7 @@ var CommandList = &commandList{
 					groupVersionResource: &networkingv1beta1.NetworkPolicyVersionResource,
 				},
 				addonTransform: networkpolicy.Transform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			agentEndpoint: &endpoint{
 				nonResourceEndpoint: &nonResourceEndpoint{
@@ -78,6 +81,7 @@ var CommandList = &commandList{
 					},
 				},
 				addonTransform: networkpolicy.Transform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			transformedResponse: reflect.TypeOf(networkpolicy.Response{}),
 		},
@@ -92,6 +96,7 @@ var CommandList = &commandList{
 					groupVersionResource: &networkingv1beta1.AppliedToGroupVersionResource,
 				},
 				addonTransform: appliedtogroup.Transform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			agentEndpoint: &endpoint{
 				nonResourceEndpoint: &nonResourceEndpoint{
@@ -105,6 +110,7 @@ var CommandList = &commandList{
 					},
 				},
 				addonTransform: appliedtogroup.Transform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			transformedResponse: reflect.TypeOf(appliedtogroup.Response{}),
 		},
@@ -119,6 +125,7 @@ var CommandList = &commandList{
 					groupVersionResource: &networkingv1beta1.AddressGroupVersionResource,
 				},
 				addonTransform: addressgroup.Transform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			agentEndpoint: &endpoint{
 				nonResourceEndpoint: &nonResourceEndpoint{
@@ -132,6 +139,7 @@ var CommandList = &commandList{
 					},
 				},
 				addonTransform: addressgroup.Transform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			transformedResponse: reflect.TypeOf(addressgroup.Response{}),
 		},
@@ -146,6 +154,7 @@ var CommandList = &commandList{
 					groupVersionResource: &systemv1beta1.ControllerInfoVersionResource,
 				},
 				addonTransform: controllerinfo.Transform,
+				debugArgs:      []string{"-oyaml"},
 			},
 			commandGroup:        get,
 			transformedResponse: reflect.TypeOf(controllerinfo.Response{}),
@@ -160,6 +169,7 @@ var CommandList = &commandList{
 					path:       "/agentinfo",
 					outputType: single,
 				},
+				debugArgs: []string{"-oyaml"},
 			},
 			commandGroup:        get,
 			transformedResponse: reflect.TypeOf(agentinfo.AntreaAgentInfoResponse{}),
@@ -194,6 +204,7 @@ var CommandList = &commandList{
 					},
 					outputType: multiple,
 				},
+				debugArgs: []string{"-oyaml"},
 			},
 			commandGroup:        get,
 			transformedResponse: reflect.TypeOf(podinterface.Response{}),

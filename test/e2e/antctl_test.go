@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/vmware-tanzu/antrea/pkg/antctl"
 )
 
 // antctlOutput is a helper function for logging antctl outputs.
@@ -30,7 +32,7 @@ func runAntctl(podName string, subCMDs []string, data *TestData, tb testing.TB) 
 	return stdout, stderr, err
 }
 
-// TestAntctlAgentLocalAccess ensures antctl is accessible in a agent Pod.
+// TestAntctlAgentLocalAccess ensures antctl is accessible in an agent Pod.
 func TestAntctlAgentLocalAccess(t *testing.T) {
 	data, err := setupTest(t)
 	if err != nil {
@@ -41,15 +43,41 @@ func TestAntctlAgentLocalAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error when getting antrea-agent pod name: %v", err)
 	}
-	if _, _, err := runAntctl(podName, []string{"antctl", "-v", "version"}, data, t); err != nil {
-		t.Fatalf("Error when running `antctl version` from %s: %v", podName, err)
+	for _, commands := range antctl.CommandList.DebugCommands(antctl.ModeAgent) {
+		t.Run(strings.Join(commands, " "), func(t *testing.T) {
+			commands = append([]string{"antctl"}, commands...)
+			if _, _, err := runAntctl(podName, commands, data, t); err != nil {
+				t.Fatalf("Error when running `antctl version` from %s: %v", podName, err)
+			}
+		})
 	}
 }
 
-// TestAntctlControllerRemoteAccess ensures antctl is able to be run outside of
+// TestAntctlControllerLocalAccess ensures antctl is accessible in a controller Pod.
+func TestAntctlControllerLocalAccess(t *testing.T) {
+	data, err := setupTest(t)
+	if err != nil {
+		t.Fatalf("Error when setting up test: %v", err)
+	}
+	defer teardownTest(t, data)
+	podName, err := data.getAntreaController()
+	if err != nil {
+		t.Fatalf("Error when getting antrea-agent pod name: %v", err)
+	}
+	for _, commands := range antctl.CommandList.DebugCommands(antctl.ModeController) {
+		t.Run(strings.Join(commands, " "), func(t *testing.T) {
+			commands = append([]string{"antctl"}, commands...)
+			if _, _, err := runAntctl(podName, commands, data, t); err != nil {
+				t.Fatalf("Error when running `antctl version` from %s: %v", podName, err)
+			}
+		})
+	}
+}
+
+// TestAntctlControllerRemoteAccessControl ensures antctl is able to be run outside of
 // the kubernetes cluster. It uses the antctl client binary copied from the controller
 // Pod.
-func TestAntctlControllerRemoteAccess(t *testing.T) {
+func TestAntctlControllerRemoteAccessControl(t *testing.T) {
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)

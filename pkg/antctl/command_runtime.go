@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	componentController string = "controller"
-	componentAgent      string = "agent"
+	ModeController string = "controller"
+	ModeAgent      string = "agent"
 )
 
 var (
@@ -32,8 +32,8 @@ var (
 
 func init() {
 	if strings.HasPrefix(os.Getenv("POD_NAME"), "antrea-agent") {
-		runtimeComponent = componentAgent
+		runtimeComponent = ModeAgent
 	} else {
-		runtimeComponent = componentController
+		runtimeComponent = ModeController
 	}
 }

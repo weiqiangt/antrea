@@ -48,8 +48,8 @@ func (cl *commandList) ApplyToRootCommand(root *cobra.Command) {
 	}
 	for i := range cl.definitions {
 		def := cl.definitions[i]
-		if (runtimeComponent == componentAgent && def.agentEndpoint == nil) ||
-			(runtimeComponent == componentController && def.controllerEndpoint == nil) {
+		if (runtimeComponent == ModeAgent && def.agentEndpoint == nil) ||
+			(runtimeComponent == ModeController && def.controllerEndpoint == nil) {
 			continue
 		}
 		def.applySubCommandToRoot(root, client)
@@ -96,4 +96,27 @@ func (cl *commandList) validate() []error {
 func renderDescription(command *cobra.Command) {
 	command.Short = strings.ReplaceAll(command.Short, "${component}", runtimeComponent)
 	command.Long = strings.ReplaceAll(command.Long, "${component}", runtimeComponent)
+}
+
+func (cl *commandList) DebugCommands(mode string) [][]string {
+	var allCommands [][]string
+	for i := range cl.definitions {
+		def := cl.definitions[i]
+		var endpoint *endpoint
+		if mode == ModeAgent && def.agentEndpoint != nil {
+			endpoint = def.agentEndpoint
+		} else if mode == ModeController && def.controllerEndpoint != nil {
+			endpoint = def.controllerEndpoint
+		} else {
+			continue
+		}
+		var currentCommands []string
+		if group, ok := groupCommands[def.commandGroup]; ok {
+			currentCommands = append(currentCommands, group.Use)
+		}
+		currentCommands = append(currentCommands, def.use)
+		currentCommands = append(currentCommands, endpoint.debugArgs...)
+		allCommands = append(allCommands, currentCommands)
+	}
+	return allCommands
 }
