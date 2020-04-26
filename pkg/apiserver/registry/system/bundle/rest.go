@@ -43,7 +43,7 @@ var (
 )
 
 func NewStorage(mode string) Storage {
-	status := &statusREST{
+	bundle := &bundleREST{
 		mode: mode,
 		cache: &systemv1beta1.Bundle{
 			ObjectMeta: metav1.ObjectMeta{Name: mode},
@@ -52,27 +52,27 @@ func NewStorage(mode string) Storage {
 	}
 	return Storage{
 		Mode:     mode,
-		Status:   status,
-		Download: &downloadREST{status: status},
+		Bundle:   bundle,
+		Download: &downloadREST{bundle: bundle},
 	}
 }
 
 // Storage contains REST resources for Bundle, includes status query and download.
 type Storage struct {
-	Status   *statusREST
+	Bundle   *bundleREST
 	Download *downloadREST
 	Mode     string
 }
 
 var (
-	_ rest.Scoper          = &statusREST{}
-	_ rest.Getter          = &statusREST{}
-	_ rest.Creater         = &statusREST{}
-	_ rest.GracefulDeleter = &statusREST{}
+	_ rest.Scoper          = &bundleREST{}
+	_ rest.Getter          = &bundleREST{}
+	_ rest.Creater         = &bundleREST{}
+	_ rest.GracefulDeleter = &bundleREST{}
 )
 
-// statusREST implements REST interfaces for bundle status querying.
-type statusREST struct {
+// bundleREST implements REST interfaces for bundle status querying.
+type bundleREST struct {
 	mode         string
 	statusLocker sync.RWMutex
 	cancelFunc   context.CancelFunc
@@ -82,7 +82,7 @@ type statusREST struct {
 // Create triggers a bundle generation progress. It only allows to create resource
 // which has the same name with the mode. It returns metav1.Status if there is any
 // error, otherwise it returns the Bundle.
-func (r *statusREST) Create(ctx context.Context, obj runtime.Object, createValidation rest.ValidateObjectFunc, options *metav1.CreateOptions) (runtime.Object, error) {
+func (r *bundleREST) Create(ctx context.Context, obj runtime.Object, createValidation rest.ValidateObjectFunc, options *metav1.CreateOptions) (runtime.Object, error) {
 	requestBundle := obj.(*systemv1beta1.Bundle)
 	if requestBundle.Name != r.mode {
 		return nil, errors.NewForbidden(systemv1beta1.ControllerInfoVersionResource.GroupResource(), requestBundle.Name, fmt.Errorf("only resource name \"%s\" is allowed", r.mode))
@@ -129,13 +129,13 @@ func (r *statusREST) Create(ctx context.Context, obj runtime.Object, createValid
 	return r.cache, nil
 }
 
-func (r *statusREST) New() runtime.Object {
+func (r *bundleREST) New() runtime.Object {
 	return &systemv1beta1.Bundle{}
 }
 
 // Get returns current status of the bundle. It only allows to query the resource
 // which has the same name of the mode.
-func (r *statusREST) Get(_ context.Context, name string, _ *metav1.GetOptions) (runtime.Object, error) {
+func (r *bundleREST) Get(_ context.Context, name string, _ *metav1.GetOptions) (runtime.Object, error) {
 	r.statusLocker.RLock()
 	defer r.statusLocker.RUnlock()
 	if r.cache.Name != name {
@@ -147,7 +147,7 @@ func (r *statusREST) Get(_ context.Context, name string, _ *metav1.GetOptions) (
 // Delete can remove the current finished bundle or cancel a running bundle
 // collecting. It only allows to query the resource which has the same name of
 // the mode.
-func (r *statusREST) Delete(_ context.Context, name string, _ rest.ValidateObjectFunc, _ *metav1.DeleteOptions) (runtime.Object, bool, error) {
+func (r *bundleREST) Delete(_ context.Context, name string, _ rest.ValidateObjectFunc, _ *metav1.DeleteOptions) (runtime.Object, bool, error) {
 	if name != r.mode {
 		return nil, false, errors.NewNotFound(systemv1beta1.Resource("bundle"), name)
 	}
@@ -163,11 +163,11 @@ func (r *statusREST) Delete(_ context.Context, name string, _ rest.ValidateObjec
 	return nil, true, nil
 }
 
-func (r *statusREST) NamespaceScoped() bool {
+func (r *bundleREST) NamespaceScoped() bool {
 	return false
 }
 
-func (r *statusREST) collect(ctx context.Context, dumpers ...func(string) error) (*systemv1beta1.Bundle, error) {
+func (r *bundleREST) collect(ctx context.Context, dumpers ...func(string) error) (*systemv1beta1.Bundle, error) {
 	basedir, err := afero.TempDir(defaultFS, "", "bundle_tmp_")
 	if err != nil {
 		return nil, fmt.Errorf("error when creating tempdir: %w", err)
@@ -209,7 +209,7 @@ func (r *statusREST) collect(ctx context.Context, dumpers ...func(string) error)
 	}, nil
 }
 
-func (r *statusREST) collectAgent(ctx context.Context) (*systemv1beta1.Bundle, error) {
+func (r *bundleREST) collectAgent(ctx context.Context) (*systemv1beta1.Bundle, error) {
 	return r.collect(
 		ctx,
 		dumpAgentLog,
@@ -224,7 +224,7 @@ func (r *statusREST) collectAgent(ctx context.Context) (*systemv1beta1.Bundle, e
 	)
 }
 
-func (r *statusREST) collectController(ctx context.Context) (*systemv1beta1.Bundle, error) {
+func (r *bundleREST) collectController(ctx context.Context) (*systemv1beta1.Bundle, error) {
 	return r.collect(
 		ctx,
 		dumpControllerLog,
@@ -235,7 +235,7 @@ func (r *statusREST) collectController(ctx context.Context) (*systemv1beta1.Bund
 	)
 }
 
-func (r *statusREST) clean(ctx context.Context, bundlePath string, duration time.Duration) {
+func (r *bundleREST) clean(ctx context.Context, bundlePath string, duration time.Duration) {
 	select {
 	case <-ctx.Done():
 	case <-time.After(duration):
@@ -265,7 +265,7 @@ var (
 
 // downloadREST implements the REST for downloading the bundle.
 type downloadREST struct {
-	status *statusREST
+	bundle *bundleREST
 }
 
 func (d *downloadREST) New() runtime.Object {
@@ -273,7 +273,7 @@ func (d *downloadREST) New() runtime.Object {
 }
 
 func (d *downloadREST) Get(_ context.Context, _ string, _ *metav1.GetOptions) (runtime.Object, error) {
-	return &bundleStream{d.status.cache}, nil
+	return &bundleStream{d.bundle.cache}, nil
 }
 
 func (d *downloadREST) ProducesMIMETypes(_ string) []string {

@@ -38,7 +38,7 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/agent/apiserver/handlers/podinterface"
 	agentquerier "github.com/vmware-tanzu/antrea/pkg/agent/querier"
 	systeminstall "github.com/vmware-tanzu/antrea/pkg/apis/system/install"
-	system "github.com/vmware-tanzu/antrea/pkg/apis/system/v1beta1"
+	systemv1beta1 "github.com/vmware-tanzu/antrea/pkg/apis/system/v1beta1"
 	"github.com/vmware-tanzu/antrea/pkg/apiserver/registry/system/bundle"
 	"github.com/vmware-tanzu/antrea/pkg/querier"
 	antreaversion "github.com/vmware-tanzu/antrea/pkg/version"
@@ -75,10 +75,10 @@ func installHandlers(aq agentquerier.AgentQuerier, npq querier.AgentNetworkPolic
 }
 
 func installAPIGroup(s *genericapiserver.GenericAPIServer) error {
-	systemGroup := genericapiserver.NewDefaultAPIGroupInfo(system.GroupName, scheme, metav1.ParameterCodec, codecs)
+	systemGroup := genericapiserver.NewDefaultAPIGroupInfo(systemv1beta1.GroupName, scheme, metav1.ParameterCodec, codecs)
 	systemStorage := map[string]rest.Storage{}
 	bundleStorage := bundle.NewStorage("agent")
-	systemStorage["bundles"] = bundleStorage.Status
+	systemStorage["bundles"] = bundleStorage.Bundle
 	systemStorage["bundles/download"] = bundleStorage.Download
 	systemGroup.VersionedResourcesStorageMap["v1beta1"] = systemStorage
 	return s.InstallAPIGroup(&systemGroup)

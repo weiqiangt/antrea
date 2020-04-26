@@ -116,7 +116,7 @@ func (c completedConfig) New() (*APIServer, error) {
 	systemStorage := map[string]rest.Storage{}
 	systemStorage["controllerinfos"] = controllerinfo.NewREST(c.extraConfig.controllerQuerier)
 	bundleStorage := bundle.NewStorage("controller")
-	systemStorage["bundles"] = bundleStorage.Status
+	systemStorage["bundles"] = bundleStorage.Bundle
 	systemStorage["bundles/download"] = bundleStorage.Download
 	systemGroup.VersionedResourcesStorageMap["v1beta1"] = systemStorage
 

@@ -81,6 +81,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: API_PORT
+              value: "10350"
           ports:
             - containerPort: 10350
               name: api

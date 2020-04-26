@@ -436,6 +436,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: API_PORT
+          value: "10349"
         image: antrea/antrea-ubuntu:latest
         imagePullPolicy: IfNotPresent
         name: antrea-controller
@@ -556,6 +558,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: API_PORT
+          value: "10350"
         image: antrea/antrea-ubuntu:latest
         imagePullPolicy: IfNotPresent
         livenessProbe:
