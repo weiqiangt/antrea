@@ -51,6 +51,7 @@ func runAntctl(podName string, cmds []string, data *TestData, tb testing.TB) (st
 
 // TestAntctlAgentLocalAccess ensures antctl is accessible in a agent Pod.
 func TestAntctlAgentLocalAccess(t *testing.T) {
+	skipIfWindows(t)
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
@@ -77,6 +78,7 @@ func TestAntctlAgentLocalAccess(t *testing.T) {
 // the kubernetes cluster. It uses the antctl client binary copied from the controller
 // Pod.
 func TestAntctlControllerRemoteAccess(t *testing.T) {
+	skipIfWindows(t)
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
@@ -128,6 +130,7 @@ func TestAntctlControllerRemoteAccess(t *testing.T) {
 // TestAntctlVerboseMode ensures no unexpected outputs during the execution of
 // the antctl client.
 func TestAntctlVerboseMode(t *testing.T) {
+	skipIfWindows(t)
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)

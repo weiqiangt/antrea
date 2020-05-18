@@ -28,6 +28,7 @@ import (
 // them ping each other.
 func TestIPSecTunnelConnectivity(t *testing.T) {
 	skipIfProviderIs(t, "kind", "IPSec tunnel does not work with Kind")
+	skipIfWindows(t)
 	skipIfNumNodesLessThan(t, 2)
 
 	data, err := setupTest(t)
@@ -50,6 +51,7 @@ func TestIPSecTunnelConnectivity(t *testing.T) {
 // correctly.
 func TestIPSecDeleteStaleTunnelPorts(t *testing.T) {
 	skipIfProviderIs(t, "kind", "IPSec tunnel does not work with Kind")
+	skipIfWindows(t)
 	skipIfNumNodesLessThan(t, 2)
 
 	data, err := setupTest(t)

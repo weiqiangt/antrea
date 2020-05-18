@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func TestDifferentNamedPorts(t *testing.T) {
+func TestNetworkPolicyDifferentNamedPorts(t *testing.T) {
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
@@ -52,7 +52,7 @@ func TestDifferentNamedPorts(t *testing.T) {
 	}
 
 	client0Name := randName("test-client-")
-	if err := data.createBusyboxPod(client0Name); err != nil {
+	if err := data.createToolPod(client0Name); err != nil {
 		t.Fatalf("Error when creating busybox test Pod: %v", err)
 	}
 	defer deletePodWrapper(t, data, client0Name)
@@ -61,7 +61,7 @@ func TestDifferentNamedPorts(t *testing.T) {
 	}
 
 	client1Name := randName("test-client-")
-	if err := data.createBusyboxPod(client1Name); err != nil {
+	if err := data.createToolPod(client1Name); err != nil {
 		t.Fatalf("Error when creating busybox test Pod: %v", err)
 	}
 	defer deletePodWrapper(t, data, client1Name)
@@ -122,7 +122,7 @@ func TestDifferentNamedPorts(t *testing.T) {
 	}
 }
 
-func TestDefaultDenyEgressPolicy(t *testing.T) {
+func TestNetworkPolicyDefaultDenyEgressPolicy(t *testing.T) {
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
@@ -141,7 +141,7 @@ func TestDefaultDenyEgressPolicy(t *testing.T) {
 	}
 
 	clientName := randName("test-client-")
-	if err := data.createBusyboxPod(clientName); err != nil {
+	if err := data.createToolPod(clientName); err != nil {
 		t.Fatalf("Error when creating busybox test Pod: %v", err)
 	}
 	defer deletePodWrapper(t, data, clientName)

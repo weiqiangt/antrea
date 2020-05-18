@@ -22,6 +22,12 @@ import (
 	"time"
 )
 
+func skipIfWindows(t *testing.T) {
+	if testOptions.windowsMode {
+		t.Skipf("Skipping test for Windows mode")
+	}
+}
+
 func skipIfProviderIs(t *testing.T, name string, reason string) {
 	if testOptions.providerName == name {
 		t.Skipf("Skipping test for the '%s' provider: %s", name, reason)
@@ -62,9 +68,9 @@ func setupTest(tb testing.TB) (*TestData, error) {
 	if err := data.createTestNamespace(); err != nil {
 		return nil, err
 	}
-	if err := ensureAntreaRunning(tb, data); err != nil {
-		return nil, err
-	}
+	//if err := ensureAntreaRunning(tb, data); err != nil {
+	//	return nil, err
+	//}
 	return data, nil
 }
 
@@ -167,6 +173,10 @@ func exportLogs(tb testing.TB, data *TestData) {
 		return nil
 	})
 
+	if testOptions.windowsMode {
+		return
+	}
+
 	// export kubelet logs with journalctl for each Node. If the Nodes do not use journalctl we
 	// print a log message. If kubelet is not run with systemd, the log file will be empty.
 	if err := forAllNodes(func(nodeName string) error {
@@ -232,7 +242,7 @@ func createTestBusyboxPods(tb testing.TB, data *TestData, num int, nodeName stri
 		podName := randName("test-pod-")
 
 		tb.Logf("Creating a busybox test Pod '%s' and waiting for IP", podName)
-		if err := data.createBusyboxPodOnNode(podName, nodeName); err != nil {
+		if err := data.createToolPodOnNode(podName, nodeName); err != nil {
 			tb.Errorf("Error when creating busybox test Pod '%s': %v", podName, err)
 			return "", "", err
 		}

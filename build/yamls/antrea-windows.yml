@@ -88,19 +88,19 @@ kind: DaemonSet
 metadata:
   labels:
     app: antrea
-    component: antrea-agent
+    component: antrea-agent-windows
   name: antrea-agent-windows
   namespace: kube-system
 spec:
   selector:
     matchLabels:
       app: antrea
-      component: antrea-agent
+      component: antrea-agent-windows
   template:
     metadata:
       labels:
         app: antrea
-        component: antrea-agent
+        component: antrea-agent-windows
     spec:
       containers:
         - command:

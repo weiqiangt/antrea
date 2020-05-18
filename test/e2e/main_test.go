@@ -58,10 +58,6 @@ func (tOptions *TestOptions) setupLogging() func() {
 
 // testMain is meant to be called by TestMain and enables the use of defer statements.
 func testMain(m *testing.M) int {
-	flag.StringVar(&testOptions.providerName, "provider", "vagrant", "K8s test cluster provider")
-	flag.StringVar(&testOptions.providerConfigPath, "provider-cfg-path", "", "Optional config file for provider")
-	flag.StringVar(&testOptions.logsExportDir, "logs-export-dir", "", "Export directory for test logs")
-	flag.BoolVar(&testOptions.logsExportOnSuccess, "logs-export-on-success", false, "Export logs even when a test is successful")
 	flag.Parse()
 
 	if err := initProvider(); err != nil {
@@ -85,4 +81,12 @@ func testMain(m *testing.M) int {
 
 func TestMain(m *testing.M) {
 	os.Exit(testMain(m))
+}
+
+func init() {
+	flag.StringVar(&testOptions.providerName, "provider", "vagrant", "K8s test cluster provider")
+	flag.StringVar(&testOptions.providerConfigPath, "provider-cfg-path", "", "Optional config file for provider")
+	flag.StringVar(&testOptions.logsExportDir, "logs-export-dir", "", "Export directory for test logs")
+	flag.BoolVar(&testOptions.logsExportOnSuccess, "logs-export-on-success", false, "Export logs even when a test is successful")
+	flag.BoolVar(&testOptions.windowsMode, "windows", false, "Running test for Antrea Windows")
 }

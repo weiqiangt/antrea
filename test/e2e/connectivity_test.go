@@ -67,11 +67,16 @@ func (data *TestData) testPodConnectivitySameNode(t *testing.T) {
 	for idx := range podNames {
 		podNames[idx] = randName(fmt.Sprintf("test-pod-%d-", idx))
 	}
-	workerNode := workerNodeName(1)
+	var workerNode string
+	if testOptions.windowsMode {
+		workerNode = windowsNodeName(0)
+	} else {
+		workerNode = workerNodeName(1)
+	}
 
 	t.Logf("Creating %d busybox test Pods on '%s'", numPods, workerNode)
 	for _, podName := range podNames {
-		if err := data.createBusyboxPodOnNode(podName, workerNode); err != nil {
+		if err := data.createToolPodOnNode(podName, workerNode); err != nil {
 			t.Fatalf("Error when creating busybox test Pod '%s': %v", podName, err)
 		}
 		defer deletePodWrapper(t, data, podName)
@@ -82,7 +87,7 @@ func (data *TestData) testPodConnectivitySameNode(t *testing.T) {
 
 // TestPodConnectivitySameNode checks that Pods running on the same Node can reach each other, by
 // creating multiple Pods on the same Node and having them ping each other.
-func TestPodConnectivitySameNode(t *testing.T) {
+func TestConnectivityPodSameNode(t *testing.T) {
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
@@ -93,6 +98,7 @@ func TestPodConnectivitySameNode(t *testing.T) {
 }
 
 func (data *TestData) testHostPortPodConnectivity(t *testing.T) {
+	skipIfWindows(t)
 	// Create a server Pod with hostPort set to 80.
 	hpPodName := randName("test-host-port-pod-")
 	hpPodPort := 80
@@ -110,7 +116,7 @@ func (data *TestData) testHostPortPodConnectivity(t *testing.T) {
 	hpPodHostIP := hpPod.Status.HostIP
 	// Create client Pod to test connectivity.
 	clientName := randName("test-client-")
-	if err := data.createBusyboxPod(clientName); err != nil {
+	if err := data.createToolPod(clientName); err != nil {
 		t.Fatalf("Error when creating busybox test Pod: %v", err)
 	}
 	defer deletePodWrapper(t, data, clientName)
@@ -124,7 +130,7 @@ func (data *TestData) testHostPortPodConnectivity(t *testing.T) {
 }
 
 // TestHostPortPodConnectivity checks that a Pod with hostPort set is reachable.
-func TestHostPortPodConnectivity(t *testing.T) {
+func TestConnectivityHostPortPodConnectivity(t *testing.T) {
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
@@ -148,9 +154,14 @@ func createPodsOnDifferentNodes(t *testing.T, data *TestData, numPods int) (podN
 
 	for idx := 0; idx < numPods; idx++ {
 		podName := randName(fmt.Sprintf("test-pod-%d-", idx))
-		nodeName := nodeName(idx % clusterInfo.numNodes)
-		t.Logf("Creating busybox test Pods '%s' on '%s'", podName, nodeName)
-		if err := data.createBusyboxPodOnNode(podName, nodeName); err != nil {
+		var nodeNameStr string
+		if testOptions.windowsMode {
+			nodeNameStr = windowsNodeName(idx)
+		} else {
+			nodeNameStr = nodeName(idx % clusterInfo.numNodes)
+		}
+		t.Logf("Creating busybox test Pods '%s' on '%s'", podName, nodeNameStr)
+		if err := data.createToolPodOnNode(podName, nodeNameStr); err != nil {
 			cleanup()
 			t.Fatalf("Error when creating busybox test Pod '%s': %v", podName, err)
 		}
@@ -179,7 +190,7 @@ func (data *TestData) testPodConnectivityDifferentNodes(t *testing.T) {
 
 // TestPodConnectivityDifferentNodes checks that Pods running on different Nodes can reach each
 // other, by creating multiple Pods across distinct Nodes and having them ping each other.
-func TestPodConnectivityDifferentNodes(t *testing.T) {
+func TestConnectivityPodDifferentNodes(t *testing.T) {
 	skipIfNumNodesLessThan(t, 2)
 	data, err := setupTest(t)
 	if err != nil {
@@ -222,7 +233,7 @@ func (data *TestData) redeployAntrea(t *testing.T, enableIPSec bool) {
 
 // TestPodConnectivityAfterAntreaRestart checks that restarting antrea-agent does not create
 // connectivity issues between Pods.
-func TestPodConnectivityAfterAntreaRestart(t *testing.T) {
+func TestConnectivityPodAfterAntreaRestart(t *testing.T) {
 	data, err := setupTest(t)
 	if err != nil {
 		t.Fatalf("Error when setting up test: %v", err)
@@ -248,7 +259,8 @@ func TestPodConnectivityAfterAntreaRestart(t *testing.T) {
 // take some time for the Agent to replay the flows. This will not impact this test, since we are
 // just testing L2 connectivity betwwen 2 Pods on the same Node, and the default behavior of the
 // br-int bridge is to implement normal L2 forwarding.
-func TestOVSRestartSameNode(t *testing.T) {
+func TestConnectivityOVSRestartSameNode(t *testing.T) {
+	skipIfWindows(t)
 	skipIfProviderIs(t, "kind", "test not valid for the netdev datapath type")
 	data, err := setupTest(t)
 	if err != nil {
@@ -306,7 +318,8 @@ func TestOVSRestartSameNode(t *testing.T) {
 // TestOVSFlowReplay checks that when OVS restarts unexpectedly the Antrea agent takes care of
 // replaying flows. More precisely this test checks that Pod connectivity still works after deleting
 // the flows and force-restarting the OVS dameons.
-func TestOVSFlowReplay(t *testing.T) {
+func TestConnectivityOVSFlowReplay(t *testing.T) {
+	skipIfWindows(t)
 	skipIfProviderIs(t, "kind", "stopping OVS daemons create connectivity issues")
 	data, err := setupTest(t)
 	if err != nil {
@@ -319,11 +332,16 @@ func TestOVSFlowReplay(t *testing.T) {
 	for idx := range podNames {
 		podNames[idx] = randName(fmt.Sprintf("test-pod-%d-", idx))
 	}
-	workerNode := workerNodeName(1)
+	var workerNode string
+	if testOptions.windowsMode {
+		workerNode = windowsNodeName(0)
+	} else {
+		workerNode = workerNodeName(1)
+	}
 
 	t.Logf("Creating %d busybox test Pods on '%s'", numPods, workerNode)
 	for _, podName := range podNames {
-		if err := data.createBusyboxPodOnNode(podName, workerNode); err != nil {
+		if err := data.createToolPodOnNode(podName, workerNode); err != nil {
 			t.Fatalf("Error when creating busybox test Pod '%s': %v", podName, err)
 		}
 		defer deletePodWrapper(t, data, podName)
@@ -360,7 +378,7 @@ func TestOVSFlowReplay(t *testing.T) {
 // TestPingLargeMTU verifies that fragmented ICMP packets are handled correctly. Until OVS 2.12.0,
 // the conntrack implementation of the OVS userspace datapath did not support v4/v6 fragmentation
 // and this test was failing when Antrea was running on a Kind cluster.
-func TestPingLargeMTU(t *testing.T) {
+func TestConnectivityPingLargeMTU(t *testing.T) {
 	skipIfNumNodesLessThan(t, 2)
 	data, err := setupTest(t)
 	if err != nil {
@@ -375,7 +393,13 @@ func TestPingLargeMTU(t *testing.T) {
 	podIPs := waitForPodIPs(t, data, podNames)
 
 	pingSize := 2000
-	cmd := fmt.Sprintf("ping -c %d -s %d %s", pingCount, pingSize, podIPs[podName1])
+	sizeFlag := "-s"
+	countFlag := "-c"
+	if testOptions.windowsMode {
+		sizeFlag = "-l"
+		countFlag = "-n"
+	}
+	cmd := fmt.Sprintf("ping %s %d %s %d %s", countFlag, pingCount, sizeFlag, pingSize, podIPs[podName1])
 	t.Logf("Running ping with size %d between Pods %s and %s", pingSize, podName0, podName1)
 	stdout, stderr, err := data.runCommandFromPod(testNamespace, podName0, busyboxContainerName, strings.Fields(cmd))
 	if err != nil {

@@ -59,8 +59,9 @@ const (
 )
 
 type ClusterNode struct {
-	idx  int // 0 for master Node
-	name string
+	idx     int // 0 for master Node
+	name    string
+	windows bool
 }
 
 type ClusterInfo struct {
@@ -78,6 +79,7 @@ type TestOptions struct {
 	providerConfigPath  string
 	logsExportDir       string
 	logsExportOnSuccess bool
+	windowsMode         bool
 }
 
 var testOptions TestOptions
@@ -101,6 +103,16 @@ func workerNodeName(idx int) string {
 	} else {
 		return node.name
 	}
+}
+
+func windowsNodeName(idx int) string {
+	var nodes []string
+	for _, node := range clusterInfo.nodes {
+		if node.windows {
+			nodes = append(nodes, node.name)
+		}
+	}
+	return nodes[idx%len(nodes)]
 }
 
 func masterNodeName() string {
@@ -171,8 +183,9 @@ func collectClusterInfo() error {
 		}
 
 		clusterInfo.nodes[nodeIdx] = ClusterNode{
-			idx:  nodeIdx,
-			name: node.Name,
+			idx:     nodeIdx,
+			name:    node.Name,
+			windows: node.Labels["kubernetes.io/os"] == "windows",
 		}
 	}
 	if clusterInfo.masterNodeName == "" {
@@ -297,6 +310,16 @@ func (data *TestData) waitForAntreaDaemonSetPods(timeout time.Duration) error {
 		if err != nil {
 			return false, fmt.Errorf("error when getting Antrea daemonset: %v", err)
 		}
+		numberAvailable := daemonSet.Status.NumberAvailable
+		numberUpdated := daemonSet.Status.UpdatedNumberScheduled
+		if testOptions.windowsMode {
+			windowsDaemonSet, err := data.clientset.AppsV1().DaemonSets(antreaNamespace).Get(antreaDaemonSet, metav1.GetOptions{})
+			if err != nil {
+				return false, fmt.Errorf("error when getting Antrea Windows daemonset: %v", err)
+			}
+			numberAvailable += windowsDaemonSet.Status.NumberAvailable
+			numberUpdated += windowsDaemonSet.Status.UpdatedNumberScheduled
+		}
 
 		// Make sure that all Daemon Pods are available.
 		// We use clusterInfo.numNodes instead of DesiredNumberScheduled because
@@ -304,8 +327,8 @@ func (data *TestData) waitForAntreaDaemonSetPods(timeout time.Duration) error {
 		// first time we get the DaemonSet's Status, we would return immediately instead of
 		// waiting.
 		desiredNumber := int32(clusterInfo.numNodes)
-		if daemonSet.Status.NumberAvailable == desiredNumber &&
-			daemonSet.Status.UpdatedNumberScheduled == desiredNumber {
+		if numberAvailable == desiredNumber &&
+			numberUpdated == desiredNumber {
 			// Success
 			return true, nil
 		}
@@ -456,12 +479,15 @@ func (data *TestData) createPodOnNode(name string, nodeName string, image string
 				Ports:           ports,
 			},
 		},
+		NodeSelector:  map[string]string{},
 		RestartPolicy: v1.RestartPolicyNever,
 	}
 	if nodeName != "" {
-		podSpec.NodeSelector = map[string]string{
-			"kubernetes.io/hostname": nodeName,
-		}
+		podSpec.NodeSelector["kubernetes.io/hostname"] = nodeName
+	} else if testOptions.windowsMode {
+		podSpec.NodeSelector["kubernetes.io/os"] = "windows"
+	} else {
+		podSpec.NodeSelector["kubernetes.io/os"] = "linux"
 	}
 	if nodeName == masterNodeName() {
 		// tolerate NoSchedule taint if we want Pod to run on master node
@@ -488,33 +514,30 @@ func (data *TestData) createPodOnNode(name string, nodeName string, image string
 	return nil
 }
 
-// createBusyboxPodOnNode creates a Pod in the test namespace with a single busybox container. The
+// createToolPodOnNode creates a Pod in the test namespace with a single busybox container. The
 // Pod will be scheduled on the specified Node (if nodeName is not empty).
-func (data *TestData) createBusyboxPodOnNode(name string, nodeName string) error {
+func (data *TestData) createToolPodOnNode(name string, nodeName string) error {
 	sleepDuration := 3600 // seconds
-	return data.createPodOnNode(name, nodeName, "busybox", []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil)
+	commands := []string{"sleep", strconv.Itoa(sleepDuration)}
+	imageName := "e2eteam/busybox"
+	if testOptions.windowsMode {
+		imageName = "e2eteam/busybox:1.29-windows-amd64-1809"
+	}
+	return data.createPodOnNode(name, nodeName, imageName, commands, nil, nil, nil)
 }
 
-// createBusyboxPod creates a Pod in the test namespace with a single busybox container.
-func (data *TestData) createBusyboxPod(name string) error {
-	return data.createBusyboxPodOnNode(name, "")
-}
-
-// createNginxPodOnNode creates a Pod in the test namespace with a single nginx container. The
-// Pod will be scheduled on the specified Node (if nodeName is not empty).
-func (data *TestData) createNginxPodOnNode(name string, nodeName string) error {
-	return data.createPodOnNode(name, nodeName, "nginx", []string{}, nil, nil, nil)
-}
-
-// createNginxPod creates a Pod in the test namespace with a single nginx container.
-func (data *TestData) createNginxPod(name string) error {
-	return data.createNginxPodOnNode(name, "")
+// createToolPod creates a Pod in the test namespace with a single busybox container.
+func (data *TestData) createToolPod(name string) error {
+	return data.createToolPodOnNode(name, "")
 }
 
 // createServerPod creates a Pod that can listen to specified port and have named port set.
 func (data *TestData) createServerPod(name string, portName string, portNum int, setHostPort bool) error {
 	// See https://github.com/kubernetes/kubernetes/blob/master/test/images/agnhost/porter/porter.go#L17 for the image's detail.
 	image := "gcr.io/kubernetes-e2e-test-images/agnhost:2.8"
+	if testOptions.windowsMode {
+		image = "e2eteam/agnhost:2.13-windows-amd64-1809"
+	}
 	cmd := "porter"
 	env := v1.EnvVar{Name: fmt.Sprintf("SERVE_PORT_%d", portNum), Value: "foo"}
 	port := v1.ContainerPort{Name: portName, ContainerPort: int32(portNum)}
@@ -614,8 +637,12 @@ func (data *TestData) podWaitForIP(timeout time.Duration, name, namespace string
 // takes for the Pod not to be visible to the client any more. It also waits for a new antrea-agent
 // Pod to be running on the Node.
 func (data *TestData) deleteAntreaAgentOnNode(nodeName string, gracePeriodSeconds int64, timeout time.Duration) (time.Duration, error) {
+	labelSelector := "app=antrea,component=antrea-agent"
+	if testOptions.windowsMode {
+		labelSelector += "-windows"
+	}
 	listOptions := metav1.ListOptions{
-		LabelSelector: "app=antrea,component=antrea-agent",
+		LabelSelector: labelSelector,
 		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
 	}
 	// we do not use DeleteCollection directly because we want to ensure the resources no longer
@@ -680,8 +707,12 @@ func (data *TestData) deleteAntreaAgentOnNode(nodeName string, gracePeriodSecond
 
 // getAntreaPodOnNode retrieves the name of the Antrea Pod (antrea-agent-*) running on a specific Node.
 func (data *TestData) getAntreaPodOnNode(nodeName string) (podName string, err error) {
+	labelSelector := "app=antrea,component=antrea-agent"
+	if testOptions.windowsMode {
+		labelSelector += "-windows"
+	}
 	listOptions := metav1.ListOptions{
-		LabelSelector: "app=antrea,component=antrea-agent",
+		LabelSelector: labelSelector,
 		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
 	}
 	pods, err := data.clientset.CoreV1().Pods(antreaNamespace).List(listOptions)
@@ -884,8 +915,14 @@ func parseArpingStdout(out string) (sent uint32, received uint32, loss float32, 
 }
 
 func (data *TestData) runPingCommandFromTestPod(podName string, targetIP string, count int) error {
-	cmd := []string{"ping", "-c", strconv.Itoa(count), targetIP}
+	flag := "-c"
+	if testOptions.windowsMode {
+		flag = "-n"
+	}
+	cmd := []string{"ping", flag, strconv.Itoa(count), targetIP}
 	_, _, err := data.runCommandFromPod(testNamespace, podName, busyboxContainerName, cmd)
+	//fmt.Printf("KKK: %s", stdout)
+	//fmt.Printf("KKK: %s", stderr)
 	return err
 }
 
@@ -902,6 +939,16 @@ func (data *TestData) runNetcatCommandFromTestPod(podName string, server string,
 		return nil
 	}
 	return fmt.Errorf("nc stdout: <%v>, stderr: <%v>, err: <%v>", stdout, stderr, err)
+}
+
+func (data *TestData) doesOVSPortExistOnNode(nodeName string, portName string) (bool, error) {
+	_, _, stderr, err := RunCommandOnNode(nodeName, fmt.Sprintf("ovs-vsctl port-to-br %s", portName))
+	if err == nil {
+		return true, nil
+	} else if strings.Contains(stderr, "no port named") {
+		return false, nil
+	}
+	return false, fmt.Errorf("error when running ovs-vsctl command on Node %s: %w", nodeName, err)
 }
 
 func (data *TestData) doesOVSPortExist(antreaPodName string, portName string) (bool, error) {
