@@ -1,0 +1,2 @@
+// Package upstream is copied from k8s.io/kubernetes@1.76 to avoid importing
+// the whole kubernetes repo. Some unneeded functions are removed.

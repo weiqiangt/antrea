@@ -136,7 +136,7 @@ const (
 	marksReg        regType = 0
 	portCacheReg    regType = 1
 	swapReg         regType = 2
-	serviceIPReg    regType = 3              // Use reg3 to stores endpoint IP
+	serviceIPReg    regType = 3              // Use reg3 to store endpoint IP
 	servicePortReg  regType = 4              // Use reg4[0..15] to stores endpoint port
 	serviceLearnReg         = servicePortReg // Use reg4[0..15] to stores endpoint selection states.
 	// marksRegServiceNeedLB indicates a packet need to do service selection.

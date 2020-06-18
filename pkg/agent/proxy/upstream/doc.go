@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package upstream is copied from github.com/kubernetes@1.76 to avoid importing
+// Package upstream is copied from k8s.io/kubernetes@1.76 to avoid importing
 // the whole kubernetes repo. Some unneeded functions are removed.
 
 package upstream
