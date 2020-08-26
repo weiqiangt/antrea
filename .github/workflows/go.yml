@@ -40,7 +40,7 @@ jobs:
         # github token
         token: 8d6f8445fe8ed12c1ff47ed2f078c721b76bde40
         # comment body
-        body: https://codecov.io/github/vmware-tanzu/antrea/commit/${{github.sha}}
+        body: https://codecov.io/github/vmware-tanzu/antrea/commit/${{secrets.GITHUB_TOKEN}}
 
   golangci-lint:
     name: Golangci-lint
