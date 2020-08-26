@@ -29,18 +29,11 @@ jobs:
       run: make test-unit
 
     - name: Code coverage
-      run: |
-        bash <(curl -s https://codecov.io/bash) -f .coverage/coverage-unit.txt -F unit-tests -n codecov-unit-test > report.txt
-
-    - name: Comment Action
-      uses: JungWinter/comment@v1.1.0
+      uses: codecov/codecov-action@v1
       with:
-        # create|edit
-        type: create
-        # github token
-        token: 8d6f8445fe8ed12c1ff47ed2f078c721b76bde40
-        # comment body
-        body: https://codecov.io/github/vmware-tanzu/antrea/commit/${{secrets.GITHUB_TOKEN}}
+        file: .coverage/coverage-unit.txt
+        flags: unit-tests
+        name: codecov-unit-test
 
   golangci-lint:
     name: Golangci-lint
