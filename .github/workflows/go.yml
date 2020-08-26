@@ -38,7 +38,7 @@ jobs:
         # create|edit
         type: create
         # github token
-        token: 9790a9ddedf5b01e7bd778142f74f11d84080ac0
+        token: 8d6f8445fe8ed12c1ff47ed2f078c721b76bde40
         # comment body
         body: https://codecov.io/github/vmware-tanzu/antrea/commit/${{github.sha}}
 
