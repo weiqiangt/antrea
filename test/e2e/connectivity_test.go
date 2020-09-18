@@ -96,7 +96,9 @@ func (data *TestData) testHostPortPodConnectivity(t *testing.T) {
 	// Create a server Pod with hostPort set to 80.
 	hpPodName := randName("test-host-port-pod-")
 	hpPodPort := 80
-	if err := data.createServerPod(hpPodName, "", hpPodPort, true); err != nil {
+	a := nodeName(0)
+	b := nodeName(1)
+	if err := data.createServerPod(hpPodName, a, "", hpPodPort, true); err != nil {
 		t.Fatalf("Error when creating HostPort server Pod: %v", err)
 	}
 	defer deletePodWrapper(t, data, hpPodName)
@@ -110,7 +112,7 @@ func (data *TestData) testHostPortPodConnectivity(t *testing.T) {
 	hpPodHostIP := hpPod.Status.HostIP
 	// Create client Pod to test connectivity.
 	clientName := randName("test-client-")
-	if err := data.createBusyboxPod(clientName); err != nil {
+	if err := data.createBusyboxPodOnNode(b, clientName); err != nil {
 		t.Fatalf("Error when creating busybox test Pod: %v", err)
 	}
 	defer deletePodWrapper(t, data, clientName)
