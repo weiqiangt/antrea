@@ -42,13 +42,13 @@ func TestDifferentNamedPorts(t *testing.T) {
 func (data *TestData) testDifferentNamedPorts(t *testing.T) {
 	server0Port := 80
 	_, server0IP, cleanupFunc := createAndWaitForPod(t, data, func(name string, nodeName string) error {
-		return data.createServerPod(name, "http", server0Port, false)
+		return data.createServerPod(name, "", "http", server0Port, false)
 	}, "test-server-", "")
 	defer cleanupFunc()
 
 	server1Port := 8080
 	_, server1IP, cleanupFunc := createAndWaitForPod(t, data, func(name string, nodeName string) error {
-		return data.createServerPod(name, "http", server1Port, false)
+		return data.createServerPod(name, "", "http", server1Port, false)
 	}, "test-server-", "")
 	defer cleanupFunc()
 
