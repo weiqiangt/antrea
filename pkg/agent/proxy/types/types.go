@@ -33,6 +33,7 @@ func (si *ServiceInfo) Equal(bSvcInfo *ServiceInfo) bool {
 		si.StickyMaxAgeSeconds() == bSvcInfo.StickyMaxAgeSeconds() &&
 		si.OFProtocol == bSvcInfo.OFProtocol &&
 		si.Port() == bSvcInfo.Port() &&
+		si.NodePort() == bSvcInfo.NodePort() &&
 		len(si.LoadBalancerIPStrings()) == len(bSvcInfo.LoadBalancerIPStrings())
 }
 

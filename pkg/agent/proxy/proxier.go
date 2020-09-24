@@ -74,6 +74,7 @@ type proxier struct {
 	stopChan     <-chan struct{}
 	agentQuerier querier.AgentQuerier
 	ofClient     openflow.Client
+	nodeIP       net.IP
 }
 
 func (p *proxier) isInitialized() bool {
@@ -88,6 +89,10 @@ func (p *proxier) removeStaleServices() {
 		svcInfo := svcPort.(*types.ServiceInfo)
 		if err := p.ofClient.UninstallServiceFlows(svcInfo.ClusterIP(), uint16(svcInfo.Port()), svcInfo.OFProtocol); err != nil {
 			klog.Errorf("Failed to remove flows of Service %v: %v", svcPortName, err)
+			continue
+		}
+		if err := p.ofClient.UninstallServiceFlows(p.nodeIP, uint16(svcInfo.NodePort()), svcInfo.OFProtocol); err != nil {
+			klog.Error("Failed to remove NodePort flow of Service %v: %v", svcPortName, err)
 			continue
 		}
 		for _, ingress := range svcInfo.LoadBalancerIPStrings() {
@@ -194,6 +199,12 @@ func (p *proxier) installServices() {
 				}
 			}
 		}
+		if svcInfo.NodePort() > 0 {
+			if err := p.ofClient.InstallServiceFlows(groupID, p.nodeIP, uint16(svcInfo.NodePort()), svcInfo.OFProtocol, uint16(svcInfo.StickyMaxAgeSeconds())); err != nil {
+				klog.Errorf("Error when installing Service NodePort flow %s: %v", svcInfo.String(), err)
+			}
+		}
+
 		p.serviceInstalledMap[svcPortName] = svcPort
 		p.addServiceByIP(svcInfo.String(), svcPortName)
 	}
@@ -300,12 +311,13 @@ func (p *proxier) Run(stopCh <-chan struct{}) {
 	})
 }
 
-func New(hostname string, informerFactory informers.SharedInformerFactory, ofClient openflow.Client) *proxier {
+func New(nodeIP net.IP, hostname string, informerFactory informers.SharedInformerFactory, ofClient openflow.Client) *proxier {
 	recorder := record.NewBroadcaster().NewRecorder(
 		runtime.NewScheme(),
 		corev1.EventSource{Component: componentName, Host: hostname},
 	)
 	p := &proxier{
+		nodeIP:               nodeIP,
 		endpointsConfig:      config.NewEndpointsConfig(informerFactory.Core().V1().Endpoints(), resyncPeriod),
 		serviceConfig:        config.NewServiceConfig(informerFactory.Core().V1().Services(), resyncPeriod),
 		endpointsChanges:     newEndpointsChangesTracker(hostname),
