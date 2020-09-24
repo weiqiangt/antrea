@@ -53,7 +53,7 @@ type Client interface {
 
 	// InstallClusterServiceFlows sets up the appropriate flows so that traffic can reach
 	// the different Services running in the Cluster. This method needs to be invoked once.
-	InstallClusterServiceFlows() error
+	InstallDefaultServiceFlows() error
 
 	// InstallDefaultTunnelFlows sets up the classification flow for the default (flow based) tunnel.
 	InstallDefaultTunnelFlows() error
@@ -112,6 +112,10 @@ type Client interface {
 	InstallServiceFlows(groupID binding.GroupIDType, svcIP net.IP, svcPort uint16, protocol binding.Protocol, affinityTimeout uint16) error
 	// UninstallServiceFlows removes flows installed by InstallServiceFlows.
 	UninstallServiceFlows(svcIP net.IP, svcPort uint16, protocol binding.Protocol) error
+
+	InstallClusterServiceArpResponderFlow(svcIp net.IP) error
+	UninstallClusterServiceArpResponderFlow(svcIp net.IP) error
+
 	// InstallLoadBalancerServiceFromOutsideFlows installs flows for LoadBalancer Service traffic from outside node.
 	// The traffic is received from uplink port and will be forwarded to gateway by the installed flows. And then
 	// kube-proxy will handle the traffic.
@@ -457,6 +461,22 @@ func (c *client) UninstallEndpointFlows(protocol binding.Protocol, endpoint prox
 	return c.deleteFlows(c.serviceFlowCache, cacheKey)
 }
 
+func (c *client) InstallClusterServiceArpResponderFlow(svcIp net.IP) error {
+	c.replayMutex.Lock()
+	defer c.replayMutex.Unlock()
+
+	cacheKey := fmt.Sprintf("Service_ARP_%s", svcIp.String())
+	return c.addFlows(c.serviceFlowCache, cacheKey, []binding.Flow{c.arpResponderFlow(svcIp, cookie.Service)})
+}
+
+func (c *client) UninstallClusterServiceArpResponderFlow(svcIp net.IP) error {
+	c.replayMutex.Lock()
+	defer c.replayMutex.Unlock()
+
+	cacheKey := fmt.Sprintf("Service_ARP_%s", svcIp.String())
+	return c.deleteFlows(c.serviceFlowCache, cacheKey)
+}
+
 func (c *client) InstallServiceFlows(groupID binding.GroupIDType, svcIP net.IP, svcPort uint16, protocol binding.Protocol, affinityTimeout uint16) error {
 	c.replayMutex.RLock()
 	defer c.replayMutex.RUnlock()
@@ -503,11 +523,25 @@ func (c *client) GetServiceFlowKeys(svcIP net.IP, svcPort uint16, protocol bindi
 	return flowKeys
 }
 
-func (c *client) InstallClusterServiceFlows() error {
+func (c *client) InstallDefaultServiceFlows() error {
 	flows := []binding.Flow{
 		c.serviceNeedLBFlow(),
 		c.sessionAffinityReselectFlow(),
 		c.l2ForwardOutputServiceHairpinFlow(),
+	}
+	if c.enableFullProxy {
+		flows = append(flows,
+			c.arpResponderFlow(ServiceNodePortVirtualIPv4, cookie.Service),
+			c.arpResponderFlow(ServiceHostVirtualIPv4, cookie.Service),
+			c.hairpinResponseFlow(),
+		)
+		flows = append(flows, c.hostForwardHairpinFlow()...)
+		if c.nodeConfig.GatewayConfig.IPv6 != nil {
+			flows = append(flows, c.serviceGatewayFlow(true))
+		}
+		if c.nodeConfig.GatewayConfig.IPv4 != nil {
+			flows = append(flows, c.serviceGatewayFlow(false))
+		}
 	}
 	if c.IsIPv4Enabled() {
 		flows = append(flows, c.serviceHairpinResponseDNATFlow(binding.ProtocolIP))

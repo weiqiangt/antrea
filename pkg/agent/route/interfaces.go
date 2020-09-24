@@ -18,6 +18,8 @@ import (
 	"net"
 
 	"github.com/vmware-tanzu/antrea/pkg/agent/config"
+	"github.com/vmware-tanzu/antrea/pkg/agent/proxy/types"
+	binding "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
 )
 
 // Interface is the interface for routing container packets in host network.
@@ -37,6 +39,23 @@ type Interface interface {
 	// DeleteRoutes should delete routes to the provided podCIDR.
 	// It should do nothing if the routes don't exist, without error.
 	DeleteRoutes(podCIDR *net.IPNet) error
+
+	// AddRoutes should add the route to the NodePort virtual IP.
+	AddNodePortRoute(isIPv6 bool) error
+
+	// ReconcileNodePort should remove orphaned NodePort ipset entries.
+	ReconcileNodePort(nodeIPs []net.IP, svcEntries []*types.ServiceInfo) error
+
+	// AddNodePort should add entries of the NodePort Service to the ipset.
+	// It should have no effect if the entry already exist, without error.
+	AddNodePortService(nodeIPs []net.IP, svcInfo *types.ServiceInfo, isIPv6 bool) error
+
+	// DeleteNodePort should delete entries of the NodePort Service from ipset.
+	// It should do nothing if entries of the NodePort Service don't exist, without error.
+	DeleteNodePortService(nodeIPs []net.IP, svcInfo *types.ServiceInfo, isIPv6 bool) error
+
+	AddService(svcIP net.IP, svcPort uint16, protocol binding.Protocol) error
+	DeleteService(svcIP net.IP, svcPort uint16, protocol binding.Protocol) error
 
 	// MigrateRoutesToGw should move routes from device linkname to local gateway.
 	MigrateRoutesToGw(linkName string) error

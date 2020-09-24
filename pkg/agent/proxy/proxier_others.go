@@ -28,11 +28,17 @@ func (p *proxier) installLoadBalancerServiceFlows(groupID binding.GroupIDType, s
 	if err := p.ofClient.InstallServiceFlows(groupID, svcIP, svcPort, protocol, affinityTimeout); err != nil {
 		return err
 	}
+	if err := p.routeClient.AddService(svcIP, svcPort, protocol); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (p *proxier) uninstallLoadBalancerServiceFlows(svcIP net.IP, svcPort uint16, protocol binding.Protocol) error {
 	if err := p.ofClient.UninstallServiceFlows(svcIP, svcPort, protocol); err != nil {
+		return err
+	}
+	if err := p.routeClient.DeleteService(svcIP, svcPort, protocol); err != nil {
 		return err
 	}
 	return nil

@@ -1313,6 +1313,9 @@ data:
     # this flag will not take effect.
     #  EndpointSlice: false
 
+    # Enable full functionalities of AntreaProxy.
+      FullAntreaProxy: true
+
     # Enable traceflow which provides packet tracing feature to diagnose network issue.
     #  Traceflow: true
 
@@ -1425,7 +1428,7 @@ data:
 
     # Provide the address of Kubernetes apiserver, to override any value provided in kubeconfig or InClusterConfig.
     # Defaults to "". It must be a host string, a host:port pair, or a URL to the base of the apiserver.
-    #kubeAPIServerOverride: ""
+    kubeAPIServerOverride: 192.168.77.100:6443
 
     # Comma-separated list of Cipher Suites. If omitted, the default Go Cipher Suites will be used.
     # https://golang.org/pkg/crypto/tls/#pkg-constants
@@ -1435,6 +1438,10 @@ data:
 
     # TLS min version from: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13.
     #tlsMinVersion:
+
+    # A string slice of values which specify the addresses to use for NodePorts. Values may be valid IP blocks
+    # (e.g. 1.2.3.0/24, 1.2.3.4/32). The default empty string slice ([]) means to use all local addresses.
+    #nodePortAddresses: []
   antrea-cni.conflist: |
     {
         "cniVersion":"0.3.0",
@@ -1500,7 +1507,7 @@ metadata:
   annotations: {}
   labels:
     app: antrea
-  name: antrea-config-m6cb2mk6f8
+  name: antrea-config-fm57tkgg4d
   namespace: kube-system
 ---
 apiVersion: v1
@@ -1620,7 +1627,7 @@ spec:
         key: node-role.kubernetes.io/master
       volumes:
       - configMap:
-          name: antrea-config-m6cb2mk6f8
+          name: antrea-config-fm57tkgg4d
         name: antrea-config
       - name: antrea-controller-tls
         secret:
@@ -1886,7 +1893,7 @@ spec:
         operator: Exists
       volumes:
       - configMap:
-          name: antrea-config-m6cb2mk6f8
+          name: antrea-config-fm57tkgg4d
         name: antrea-config
       - hostPath:
           path: /etc/cni/net.d

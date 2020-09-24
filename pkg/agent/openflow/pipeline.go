@@ -303,9 +303,11 @@ var (
 	// IPv4/v6 DSCP (bits 2-7) field supports exact match only.
 	traceflowTagToSRange = binding.Range{2, 7}
 
-	globalVirtualMAC, _ = net.ParseMAC("aa:bb:cc:dd:ee:ff")
-	hairpinIP           = net.ParseIP("169.254.169.252").To4()
-	hairpinIPv6         = net.ParseIP("fc00::aabb:ccdd:eeff").To16()
+	globalVirtualMAC, _        = net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	hairpinIP                  = net.ParseIP("169.254.169.252").To4()
+	hairpinIPv6                = net.ParseIP("fc00::aabb:ccdd:eeff").To16()
+	ServiceNodePortVirtualIPv4 = net.ParseIP("169.254.169.110").To4()
+	ServiceHostVirtualIPv4     = net.ParseIP("169.254.169.111").To4()
 )
 
 type OFEntryOperations interface {
@@ -334,6 +336,7 @@ func portToUint16(port int) uint16 {
 
 type client struct {
 	enableProxy                                   bool
+	enableFullProxy                               bool
 	enableAntreaPolicy                            bool
 	roundInfo                                     types.RoundInfo
 	cookieAllocator                               cookie.Allocator
@@ -1150,6 +1153,16 @@ func (c *client) serviceHairpinResponseDNATFlow(ipProtocol binding.Protocol) bin
 		Done()
 }
 
+func (c *client) hairpinResponseFlow() binding.Flow {
+	return c.pipeline[serviceHairpinTable].BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolIP).
+		MatchDstIP(net.ParseIP("169.254.169.111")).
+		Action().SetDstIP(c.nodeConfig.GatewayConfig.IPv4).
+		Action().LoadRegRange(int(marksReg), hairpinMark, hairpinMarkRange).
+		Action().GotoTable(conntrackTable).
+		Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+		Done()
+}
+
 // gatewayARPSpoofGuardFlow generates the flow to check ARP traffic sent out from the local gateway interface.
 func (c *client) gatewayARPSpoofGuardFlow(gatewayIP net.IP, gatewayMAC net.HardwareAddr, category cookie.Category) binding.Flow {
 	return c.pipeline[spoofGuardTable].BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolARP).
@@ -1940,6 +1953,30 @@ func (c *client) hairpinSNATFlow(endpointIP net.IP) binding.Flow {
 		Done()
 }
 
+func (c *client) hostForwardHairpinFlow() []binding.Flow {
+	l3FwdTable := c.pipeline[l3ForwardingTable]
+	return []binding.Flow{
+		l3FwdTable.BuildFlow(priorityLow).
+			Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+			MatchProtocol(binding.ProtocolIP).
+			MatchPktMark(0x21, nil).
+			MatchSrcIP(c.nodeConfig.GatewayConfig.IPv4).
+			Action().Move(binding.NxmFieldSrcMAC, binding.NxmFieldDstMAC).
+			Action().SetSrcMAC(globalVirtualMAC).
+			Action().LoadRegRange(int(marksReg), hairpinMark, hairpinMarkRange).
+			Action().GotoTable(l3FwdTable.GetNext()).
+			Done(),
+		c.pipeline[hairpinSNATTable].BuildFlow(priorityNormal).
+			Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+			MatchProtocol(binding.ProtocolIP).
+			MatchPktMark(0x21, nil).
+			MatchRegRange(int(marksReg), hairpinMark, hairpinMarkRange).
+			Action().SetSrcIP(net.ParseIP("169.254.169.111")).
+			Action().GotoTable(L2ForwardingOutTable).
+			Done(),
+	}
+}
+
 // serviceEndpointGroup creates/modifies the group/buckets of Endpoints. If the
 // withSessionAffinity is true, then buckets will resubmit packets back to
 // serviceLBTable to trigger the learn flow, the learn flow will then send packets
@@ -1983,6 +2020,23 @@ func (c *client) serviceEndpointGroup(groupID binding.GroupIDType, withSessionAf
 		}
 	}
 	return group
+}
+
+// serviceGatewayFlow replies Service packets back to external addresses without entering Gateway CTZone.
+func (c *client) serviceGatewayFlow(isIPv6 bool) binding.Flow {
+	table := c.pipeline[conntrackCommitTable]
+	builder := table.BuildFlow(priorityHigh).
+		MatchCTMark(ServiceCTMark, nil).
+		MatchCTStateNew(true).
+		MatchCTStateTrk(true).
+		MatchRegRange(int(marksReg), markTrafficFromGateway, binding.Range{0, 15}).
+		Action().GotoTable(table.GetNext()).
+		Cookie(c.cookieAllocator.Request(cookie.Service).Raw())
+
+	if isIPv6 {
+		return builder.MatchProtocol(binding.ProtocolIPv6).Done()
+	}
+	return builder.MatchProtocol(binding.ProtocolIP).Done()
 }
 
 // decTTLFlows decrements TTL by one for the packets forwarded across Nodes.
@@ -2069,7 +2123,7 @@ func (c *client) generatePipeline() {
 }
 
 // NewClient is the constructor of the Client interface.
-func NewClient(bridgeName, mgmtAddr string, ovsDatapathType ovsconfig.OVSDatapathType, enableProxy, enableAntreaPolicy bool) Client {
+func NewClient(bridgeName string, mgmtAddr string, ovsDatapathType ovsconfig.OVSDatapathType, enableProxy, enableAntreaPolicy, enableFullProxy bool) Client {
 	bridge := binding.NewOFBridge(bridgeName, mgmtAddr)
 	policyCache := cache.NewIndexer(
 		policyConjKeyFunc,
@@ -2078,6 +2132,7 @@ func NewClient(bridgeName, mgmtAddr string, ovsDatapathType ovsconfig.OVSDatapat
 	c := &client{
 		bridge:                   bridge,
 		enableProxy:              enableProxy,
+		enableFullProxy:          enableFullProxy,
 		enableAntreaPolicy:       enableAntreaPolicy,
 		nodeFlowCache:            newFlowCategoryCache(),
 		podFlowCache:             newFlowCategoryCache(),

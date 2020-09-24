@@ -17,10 +17,13 @@
 package util
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/containernetworking/plugins/pkg/ip"
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -220,4 +223,36 @@ func ListenLocalSocket(address string) (net.Listener, error) {
 // DialLocalSocket connects to a Unix domain socket.
 func DialLocalSocket(address string) (net.Conn, error) {
 	return dialUnix(address)
+}
+
+type RouteTable struct {
+	ID   int
+	Name string
+}
+
+func ListRouteTables() ([]RouteTable, error) {
+	f, err := os.Open("/etc/iproute2/rt_tables")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var result []RouteTable
+	scanner := bufio.NewScanner(f)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		text := strings.TrimSpace(scanner.Text())
+		if len(text) == 0 || text[0] == '#' { // Skip empty lines and comments.
+			continue
+		}
+		fields := strings.Fields(text)
+		if len(fields) != 2 { // Not a valid record.
+			continue
+		}
+		id, err := strconv.ParseInt(fields[0], 10, 32) // Because the maximum ID is 255, the bitSize is OK.
+		if err != nil {                                // Not a valid record.
+			continue
+		}
+		result = append(result, RouteTable{ID: int(id), Name: fields[1]})
+	}
+	return result, nil
 }

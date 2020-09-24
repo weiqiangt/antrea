@@ -108,7 +108,7 @@ func TestConnectivityFlows(t *testing.T) {
 		antrearuntime.WindowsOS = runtime.GOOS
 	}
 
-	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, net.ParseIP("169.254.169.110"), nil, true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 	defer func() {
@@ -135,7 +135,7 @@ func TestConnectivityFlows(t *testing.T) {
 }
 
 func TestReplayFlowsConnectivityFlows(t *testing.T) {
-	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, net.ParseIP("169.254.169.110"), nil, true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 
@@ -162,7 +162,7 @@ func TestReplayFlowsConnectivityFlows(t *testing.T) {
 }
 
 func TestReplayFlowsNetworkPolicyFlows(t *testing.T) {
-	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, net.ParseIP("169.254.169.110"), nil, true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 
@@ -267,7 +267,7 @@ func testInstallTunnelFlows(t *testing.T, config *testConfig) {
 }
 
 func testInstallServiceFlows(t *testing.T, config *testConfig) {
-	err := c.InstallClusterServiceFlows()
+	err := c.InstallDefaultServiceFlows()
 	if err != nil {
 		t.Fatalf("Failed to install Openflow entries to skip service CIDR from egress table: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	// Initialize ovs metrics (Prometheus) to test them
 	metrics.InitializeOVSMetrics()
 
-	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, net.ParseIP("169.254.169.110"), nil, true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", br))
 
@@ -445,7 +445,7 @@ func TestIPv6ConnectivityFlows(t *testing.T) {
 	// Initialize ovs metrics (Prometheus) to test them
 	metrics.InitializeOVSMetrics()
 
-	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, nil, nil, true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 
@@ -476,7 +476,7 @@ type svcConfig struct {
 }
 
 func TestProxyServiceFlows(t *testing.T) {
-	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, ovsconfig.OVSDatapathNetdev, net.ParseIP("169.254.169.110"), nil, true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", br))
 

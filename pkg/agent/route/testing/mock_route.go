@@ -22,6 +22,8 @@ package testing
 import (
 	gomock "github.com/golang/mock/gomock"
 	config "github.com/vmware-tanzu/antrea/pkg/agent/config"
+	types "github.com/vmware-tanzu/antrea/pkg/agent/proxy/types"
+	openflow "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
 	net "net"
 	reflect "reflect"
 )
@@ -49,6 +51,34 @@ func (m *MockInterface) EXPECT() *MockInterfaceMockRecorder {
 	return m.recorder
 }
 
+// AddNodePortRoute mocks base method
+func (m *MockInterface) AddNodePortRoute(arg0 bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddNodePortRoute", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddNodePortRoute indicates an expected call of AddNodePortRoute
+func (mr *MockInterfaceMockRecorder) AddNodePortRoute(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddNodePortRoute", reflect.TypeOf((*MockInterface)(nil).AddNodePortRoute), arg0)
+}
+
+// AddNodePortService mocks base method
+func (m *MockInterface) AddNodePortService(arg0 []net.IP, arg1 *types.ServiceInfo, arg2 bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddNodePortService", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddNodePortService indicates an expected call of AddNodePortService
+func (mr *MockInterfaceMockRecorder) AddNodePortService(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddNodePortService", reflect.TypeOf((*MockInterface)(nil).AddNodePortService), arg0, arg1, arg2)
+}
+
 // AddRoutes mocks base method
 func (m *MockInterface) AddRoutes(arg0 *net.IPNet, arg1, arg2 net.IP) error {
 	m.ctrl.T.Helper()
@@ -63,6 +93,34 @@ func (mr *MockInterfaceMockRecorder) AddRoutes(arg0, arg1, arg2 interface{}) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddRoutes", reflect.TypeOf((*MockInterface)(nil).AddRoutes), arg0, arg1, arg2)
 }
 
+// AddService mocks base method
+func (m *MockInterface) AddService(arg0 net.IP, arg1 uint16, arg2 openflow.Protocol) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddService", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddService indicates an expected call of AddService
+func (mr *MockInterfaceMockRecorder) AddService(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddService", reflect.TypeOf((*MockInterface)(nil).AddService), arg0, arg1, arg2)
+}
+
+// DeleteNodePortService mocks base method
+func (m *MockInterface) DeleteNodePortService(arg0 []net.IP, arg1 *types.ServiceInfo, arg2 bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteNodePortService", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteNodePortService indicates an expected call of DeleteNodePortService
+func (mr *MockInterfaceMockRecorder) DeleteNodePortService(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteNodePortService", reflect.TypeOf((*MockInterface)(nil).DeleteNodePortService), arg0, arg1, arg2)
+}
+
 // DeleteRoutes mocks base method
 func (m *MockInterface) DeleteRoutes(arg0 *net.IPNet) error {
 	m.ctrl.T.Helper()
@@ -75,6 +133,20 @@ func (m *MockInterface) DeleteRoutes(arg0 *net.IPNet) error {
 func (mr *MockInterfaceMockRecorder) DeleteRoutes(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteRoutes", reflect.TypeOf((*MockInterface)(nil).DeleteRoutes), arg0)
+}
+
+// DeleteService mocks base method
+func (m *MockInterface) DeleteService(arg0 net.IP, arg1 uint16, arg2 openflow.Protocol) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteService", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteService indicates an expected call of DeleteService
+func (mr *MockInterfaceMockRecorder) DeleteService(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteService", reflect.TypeOf((*MockInterface)(nil).DeleteService), arg0, arg1, arg2)
 }
 
 // Initialize mocks base method
@@ -117,6 +189,20 @@ func (m *MockInterface) Reconcile(arg0 []string) error {
 func (mr *MockInterfaceMockRecorder) Reconcile(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Reconcile", reflect.TypeOf((*MockInterface)(nil).Reconcile), arg0)
+}
+
+// ReconcileNodePort mocks base method
+func (m *MockInterface) ReconcileNodePort(arg0 []net.IP, arg1 []*types.ServiceInfo) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReconcileNodePort", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ReconcileNodePort indicates an expected call of ReconcileNodePort
+func (mr *MockInterfaceMockRecorder) ReconcileNodePort(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReconcileNodePort", reflect.TypeOf((*MockInterface)(nil).ReconcileNodePort), arg0, arg1)
 }
 
 // Run mocks base method

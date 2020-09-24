@@ -251,6 +251,20 @@ func (mr *MockClientMockRecorder) InstallBridgeUplinkFlows() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallBridgeUplinkFlows", reflect.TypeOf((*MockClient)(nil).InstallBridgeUplinkFlows))
 }
 
+// InstallClusterServiceArpResponderFlow mocks base method
+func (m *MockClient) InstallClusterServiceArpResponderFlow(arg0 net.IP) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InstallClusterServiceArpResponderFlow", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InstallClusterServiceArpResponderFlow indicates an expected call of InstallClusterServiceArpResponderFlow
+func (mr *MockClientMockRecorder) InstallClusterServiceArpResponderFlow(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallClusterServiceArpResponderFlow", reflect.TypeOf((*MockClient)(nil).InstallClusterServiceArpResponderFlow), arg0)
+}
+
 // InstallClusterServiceCIDRFlows mocks base method
 func (m *MockClient) InstallClusterServiceCIDRFlows(arg0 []*net.IPNet) error {
 	m.ctrl.T.Helper()
@@ -266,9 +280,9 @@ func (mr *MockClientMockRecorder) InstallClusterServiceCIDRFlows(arg0 interface{
 }
 
 // InstallClusterServiceFlows mocks base method
-func (m *MockClient) InstallClusterServiceFlows() error {
+func (m *MockClient) InstallDefaultServiceFlows() error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InstallClusterServiceFlows")
+	ret := m.ctrl.Call(m, "InstallDefaultServiceFlows")
 	ret0, _ := ret[0].(error)
 	return ret0
 }
@@ -276,7 +290,7 @@ func (m *MockClient) InstallClusterServiceFlows() error {
 // InstallClusterServiceFlows indicates an expected call of InstallClusterServiceFlows
 func (mr *MockClientMockRecorder) InstallClusterServiceFlows() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallClusterServiceFlows", reflect.TypeOf((*MockClient)(nil).InstallClusterServiceFlows))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallDefaultServiceFlows", reflect.TypeOf((*MockClient)(nil).InstallDefaultServiceFlows))
 }
 
 // InstallDefaultTunnelFlows mocks base method
@@ -565,6 +579,20 @@ func (m *MockClient) SubscribePacketIn(arg0 byte, arg1 chan *ofctrl.PacketIn) er
 func (mr *MockClientMockRecorder) SubscribePacketIn(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubscribePacketIn", reflect.TypeOf((*MockClient)(nil).SubscribePacketIn), arg0, arg1)
+}
+
+// UninstallClusterServiceArpResponderFlow mocks base method
+func (m *MockClient) UninstallClusterServiceArpResponderFlow(arg0 net.IP) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UninstallClusterServiceArpResponderFlow", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UninstallClusterServiceArpResponderFlow indicates an expected call of UninstallClusterServiceArpResponderFlow
+func (mr *MockClientMockRecorder) UninstallClusterServiceArpResponderFlow(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UninstallClusterServiceArpResponderFlow", reflect.TypeOf((*MockClient)(nil).UninstallClusterServiceArpResponderFlow), arg0)
 }
 
 // UninstallEndpointFlows mocks base method
