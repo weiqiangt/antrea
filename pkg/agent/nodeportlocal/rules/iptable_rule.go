@@ -35,7 +35,7 @@ type IPTableRules struct {
 	table *iptables.Client
 }
 
-// NewIPTableRules retruns a new instance of IPTableRules
+// NewIPTableRules returns a new instance of IPTableRules
 func NewIPTableRules() *IPTableRules {
 	iptInstance, _ := iptables.New(true, false)
 	iptRule := IPTableRules{
@@ -64,7 +64,7 @@ func (ipt *IPTableRules) CreateChains() error {
 	ruleSpec := []string{
 		"-p", "tcp", "-j", NodePortLocalChain,
 	}
-	err = ipt.table.EnsureRule(iptables.NATTable, iptables.PreRoutingChain, ruleSpec)
+	err = ipt.table.EnsureRule(iptables.NATTable, iptables.PreRoutingChain, ruleSpec, false)
 	if err != nil {
 		return fmt.Errorf("IPTABLES rule creation in NAT table failed for NPL with error: %v", err)
 	}
@@ -77,7 +77,7 @@ func (ipt *IPTableRules) AddRule(port int, podIP string) error {
 		"-p", "tcp", "-m", "tcp", "--dport",
 		fmt.Sprint(port), "-j", "DNAT", "--to-destination", podIP,
 	}
-	err := ipt.table.EnsureRule(iptables.NATTable, NodePortLocalChain, ruleSpec)
+	err := ipt.table.EnsureRule(iptables.NATTable, NodePortLocalChain, ruleSpec, false)
 	if err != nil {
 		return fmt.Errorf("IPTABLES rule creation failed for NPL with error: %v", err)
 	}

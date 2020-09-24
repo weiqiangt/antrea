@@ -1,4 +1,4 @@
-// Copyright 2020 Antrea Authors
+// Copyright 2021 Antrea Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -308,17 +308,17 @@ func (mr *MockClientMockRecorder) InstallExternalFlows() *gomock.Call {
 }
 
 // InstallGatewayFlows mocks base method
-func (m *MockClient) InstallGatewayFlows() error {
+func (m *MockClient) InstallGatewayFlows(arg0 net.IP) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "InstallGatewayFlows")
+	ret := m.ctrl.Call(m, "InstallGatewayFlows", arg0)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // InstallGatewayFlows indicates an expected call of InstallGatewayFlows
-func (mr *MockClientMockRecorder) InstallGatewayFlows() *gomock.Call {
+func (mr *MockClientMockRecorder) InstallGatewayFlows(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallGatewayFlows", reflect.TypeOf((*MockClient)(nil).InstallGatewayFlows))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InstallGatewayFlows", reflect.TypeOf((*MockClient)(nil).InstallGatewayFlows), arg0)
 }
 
 // InstallLoadBalancerServiceFromOutsideFlows mocks base method

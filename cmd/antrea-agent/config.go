@@ -124,4 +124,11 @@ type AgentConfig struct {
 	// whenever a Pod's container defines a specific port to be exposed (each container can define a list of ports as pod.spec.containers[].ports),
 	// and all Node traffic directed to that port will be forwarded to the Pod.
 	NPLPortRange string `yaml:"nplPortRange,omitempty"`
+	// The virtual IP for NodePort Service support. It must be a link-local IP otherwise the Agents will report error.
+	NodePortVirtualIP string `yaml:"nodePortVirtualIP,omitempty"`
+	// The virtual IPv6 for NodePort Service support. It must not be a link-local IP otherwise the Agents will report error.
+	NodePortVirtualIPv6 string `yaml:"nodePortVirtualIPv6,omitempty"`
+	// A string slice of values which specify the addresses to use for NodePorts. Values may be valid IP blocks
+	// (e.g. 1.2.3.0/24, 1.2.3.4/32). The default empty string slice ([]) means to use all local addresses.
+	NodePortAddresses []string `yaml:"nodePortAddresses,omitempty"`
 }

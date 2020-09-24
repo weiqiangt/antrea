@@ -1170,6 +1170,9 @@ data:
     # Service traffic.
     #  AntreaProxy: true
 
+    # Enable NodePort Service support in AntreaProxy in antrea-agent.
+    #  AntreaProxyNodePort: true
+
     # Enable traceflow which provides packet tracing feature to diagnose network issue.
     #  Traceflow: true
 
@@ -1276,6 +1279,16 @@ data:
     # whenever a Pod's container defines a specific port to be exposed (each container can define a list of ports as pod.spec.containers[].ports),
     # and all Node traffic directed to that port will be forwarded to the Pod.
     #nplPortRange: 40000-41000
+
+    # The virtual IP for NodePort Service support. It must be a link-local IP otherwise the Agents will report error.
+    #nodePortVirtualIP: 169.254.169.110
+
+    # The virtual IPv6 for NodePort Service support. It must not be a link-local IP otherwise the Agents will report error.
+    #nodePortVirtualIPv6: fec0::ffee:ddcc:bbaa
+
+    # A string slice of values which specify the addresses to use for NodePorts. Values may be valid IP blocks
+    # (e.g. 1.2.3.0/24, 1.2.3.4/32). The default empty string slice ([]) means to use all local addresses.
+    #nodePortAddresses: []
   antrea-cni.conflist: |
     {
         "cniVersion":"0.3.0",
@@ -1332,7 +1345,7 @@ metadata:
   annotations: {}
   labels:
     app: antrea
-  name: antrea-config-b8hh7hm486
+  name: antrea-config-dccfh2f227
   namespace: kube-system
 ---
 apiVersion: v1
@@ -1443,7 +1456,7 @@ spec:
         key: node-role.kubernetes.io/master
       volumes:
       - configMap:
-          name: antrea-config-b8hh7hm486
+          name: antrea-config-dccfh2f227
         name: antrea-config
       - name: antrea-controller-tls
         secret:
@@ -1708,7 +1721,7 @@ spec:
         operator: Exists
       volumes:
       - configMap:
-          name: antrea-config-b8hh7hm486
+          name: antrea-config-dccfh2f227
         name: antrea-config
       - hostPath:
           path: /etc/cni/net.d
