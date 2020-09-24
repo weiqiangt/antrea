@@ -24,6 +24,8 @@ IMAGE_NAME="antrea/codegen:kubernetes-1.18.4"
 function docker_run() {
   docker pull ${IMAGE_NAME}
   docker run --rm \
+	  	-e GOPROXY=https://goproxy.io \
+		-e GOSUMDB=off \
 		-w /go/src/github.com/vmware-tanzu/antrea \
 		-v ${ANTREA_ROOT}:/go/src/github.com/vmware-tanzu/antrea \
 		"${IMAGE_NAME}" "$@"

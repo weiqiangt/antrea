@@ -30,9 +30,13 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
 	ofmock "github.com/vmware-tanzu/antrea/pkg/agent/openflow/testing"
 	"github.com/vmware-tanzu/antrea/pkg/agent/proxy/types"
+	"github.com/vmware-tanzu/antrea/pkg/agent/route"
+	routetesting "github.com/vmware-tanzu/antrea/pkg/agent/route/testing"
 	binding "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
 	k8sproxy "github.com/vmware-tanzu/antrea/third_party/proxy"
 )
+
+var virtualNodePortIP = net.ParseIP("169.254.169.110")
 
 func makeNamespaceName(namespace, name string) apimachinerytypes.NamespacedName {
 	return apimachinerytypes.NamespacedName{Namespace: namespace, Name: name}
@@ -77,7 +81,7 @@ func makeTestEndpoints(namespace, name string, eptFunc func(*corev1.Endpoints)) 
 	return ept
 }
 
-func NewFakeProxier(ofClient openflow.Client, isIPv6 bool) *proxier {
+func NewFakeProxier(routeClient route.Interface, ofClient openflow.Client, isIPv6 bool) *proxier {
 	hostname := "localhost"
 	eventBroadcaster := record.NewBroadcaster()
 	recorder := eventBroadcaster.NewRecorder(
@@ -93,8 +97,11 @@ func NewFakeProxier(ofClient openflow.Client, isIPv6 bool) *proxier {
 		endpointsMap:         types.EndpointsMap{},
 		groupCounter:         types.NewGroupCounter(),
 		ofClient:             ofClient,
+		routeClient:          routeClient,
 		serviceStringMap:     map[string]k8sproxy.ServicePortName{},
 		isIPv6:               isIPv6,
+		nodeIPs:              []net.IP{net.ParseIP("192.168.0.1")},
+		virtualNodePortIP:    virtualNodePortIP,
 	}
 	return p
 }
@@ -103,7 +110,8 @@ func testClusterIP(t *testing.T, svcIP net.IP, epIP net.IP, isIPv6 bool) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockOFClient := ofmock.NewMockClient(ctrl)
-	fp := NewFakeProxier(mockOFClient, isIPv6)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient, isIPv6)
 
 	svcPort := 80
 	svcPortName := k8sproxy.ServicePortName{
@@ -149,6 +157,75 @@ func testClusterIP(t *testing.T, svcIP net.IP, epIP net.IP, isIPv6 bool) {
 	fp.syncProxyRules()
 }
 
+func TestExternalNameToNodePort(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	mockOFClient := ofmock.NewMockClient(ctrl)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient)
+
+	svcIPv4 := net.ParseIP("10.20.30.41")
+	svcPort := 80
+	svcNodePort := 31000
+	svcPortName := k8sproxy.ServicePortName{
+		NamespacedName: makeNamespaceName("ns1", "svc1"),
+		Port:           "80",
+		Protocol:       corev1.ProtocolTCP,
+	}
+	makeServiceMap(fp,
+		makeTestService(svcPortName.Namespace, svcPortName.Name, func(svc *corev1.Service) {
+			svc.Spec.ClusterIP = svcIPv4.String() // Should be ignored.
+			svc.Spec.Type = corev1.ServiceTypeExternalName
+			svc.Spec.ExternalName = "a.b.c.com"
+			svc.Spec.Ports = []corev1.ServicePort{{
+				Name:     svcPortName.Port,
+				Port:     int32(svcPort),
+				Protocol: corev1.ProtocolTCP,
+			}}
+		}),
+	)
+	mockRouteClient.EXPECT().ReconcileNodePort(gomock.Any(), gomock.Any()).Times(1)
+	fp.syncProxyRules()
+
+	makeServiceMap(fp,
+		makeTestService(svcPortName.Namespace, svcPortName.Name, func(svc *corev1.Service) {
+			svc.Spec.ClusterIP = svcIPv4.String()
+			svc.Spec.Type = corev1.ServiceTypeNodePort
+			svc.Spec.Ports = []corev1.ServicePort{{
+				NodePort: int32(svcNodePort),
+				Name:     svcPortName.Port,
+				Port:     int32(svcPort),
+				Protocol: corev1.ProtocolTCP,
+			}}
+		}),
+	)
+	epIP := net.ParseIP("10.180.0.1")
+	epFunc := func(ept *corev1.Endpoints) {
+		ept.Subsets = []corev1.EndpointSubset{{
+			Addresses: []corev1.EndpointAddress{{
+				IP: epIP.String(),
+			}},
+			Ports: []corev1.EndpointPort{{
+				Name:     svcPortName.Port,
+				Port:     int32(svcPort),
+				Protocol: corev1.ProtocolTCP,
+			}},
+		}}
+	}
+	ep := makeTestEndpoints(svcPortName.Namespace, svcPortName.Name, epFunc)
+	makeEndpointsMap(fp, ep)
+	groupID, _ := fp.groupCounter.Get(svcPortName)
+	mockOFClient.EXPECT().InstallServiceGroup(groupID, false, gomock.Any()).Times(1)
+	bindingProtocol := binding.ProtocolTCP
+	if isIPv6 {
+		bindingProtocol = binding.ProtocolTCPv6
+	}
+	mockOFClient.EXPECT().InstallEndpointFlows(bindingProtocol, gomock.Any(), isIPv6).Times(1)
+	mockOFClient.EXPECT().InstallServiceFlows(groupID, svcIP, uint16(svcPort), bindingProtocol, uint16(0)).Times(1)
+
+	fp.syncProxyRules()
+}
+
 func TestClusterIPv4(t *testing.T) {
 	testClusterIP(t, net.ParseIP("10.20.30.41"), net.ParseIP("10.180.0.1"), false)
 }
@@ -161,7 +238,8 @@ func testClusterIPRemoval(t *testing.T, svcIP net.IP, epIP net.IP, isIPv6 bool) 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockOFClient := ofmock.NewMockClient(ctrl)
-	fp := NewFakeProxier(mockOFClient, isIPv6)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient, isIPv6)
 
 	svcPort := 80
 	svcPortName := k8sproxy.ServicePortName{
@@ -199,6 +277,7 @@ func testClusterIPRemoval(t *testing.T, svcIP net.IP, epIP net.IP, isIPv6 bool) 
 	ep := makeTestEndpoints(svcPortName.Namespace, svcPortName.Name, epFunc)
 	makeEndpointsMap(fp, ep)
 	groupID, _ := fp.groupCounter.Get(svcPortName)
+	mockRouteClient.EXPECT().ReconcileNodePort(gomock.Any(), gomock.Any())
 	mockOFClient.EXPECT().InstallServiceGroup(groupID, false, gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallEndpointFlows(bindingProtocol, gomock.Any(), isIPv6).Times(1)
 	mockOFClient.EXPECT().InstallServiceFlows(groupID, svcIP, uint16(svcPort), bindingProtocol, uint16(0)).Times(1)
@@ -224,7 +303,8 @@ func testClusterIPNoEndpoint(t *testing.T, svcIP net.IP, isIPv6 bool) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockOFClient := ofmock.NewMockClient(ctrl)
-	fp := NewFakeProxier(mockOFClient, isIPv6)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient, isIPv6)
 
 	svcPort := 80
 	svcNodePort := 3001
@@ -246,6 +326,7 @@ func testClusterIPNoEndpoint(t *testing.T, svcIP net.IP, isIPv6 bool) {
 		}),
 	)
 	makeEndpointsMap(fp)
+	mockRouteClient.EXPECT().ReconcileNodePort(gomock.Any(), gomock.Any())
 
 	fp.syncProxyRules()
 }
@@ -262,7 +343,8 @@ func testClusterIPRemoveSamePortEndpoint(t *testing.T, svcIP net.IP, epIP net.IP
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockOFClient := ofmock.NewMockClient(ctrl)
-	fp := NewFakeProxier(mockOFClient, isIPv6)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient, isIPv6)
 
 	svcPort := 80
 	svcPortName := k8sproxy.ServicePortName{
@@ -328,6 +410,7 @@ func testClusterIPRemoveSamePortEndpoint(t *testing.T, svcIP net.IP, epIP net.IP
 
 	groupID, _ := fp.groupCounter.Get(svcPortName)
 	groupIDUDP, _ := fp.groupCounter.Get(svcPortNameUDP)
+	mockRouteClient.EXPECT().ReconcileNodePort(gomock.Any(), gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallServiceGroup(groupID, false, gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallServiceGroup(groupIDUDP, false, gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallEndpointFlows(protocolTCP, gomock.Any(), isIPv6).Times(1)
@@ -353,7 +436,8 @@ func testClusterIPRemoveEndpoints(t *testing.T, svcIP net.IP, epIP net.IP, isIPv
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockOFClient := ofmock.NewMockClient(ctrl)
-	fp := NewFakeProxier(mockOFClient, isIPv6)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient, isIPv6)
 
 	svcPort := 80
 	svcPortName := k8sproxy.ServicePortName{
@@ -390,6 +474,7 @@ func testClusterIPRemoveEndpoints(t *testing.T, svcIP net.IP, epIP net.IP, isIPv
 	}
 	makeEndpointsMap(fp, ep)
 	groupID, _ := fp.groupCounter.Get(svcPortName)
+	mockRouteClient.EXPECT().ReconcileNodePort(gomock.Any(), gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallServiceGroup(groupID, false, gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallEndpointFlows(bindingProtocol, gomock.Any(), isIPv6).Times(1)
 	mockOFClient.EXPECT().InstallServiceFlows(groupID, svcIP, uint16(svcPort), bindingProtocol, uint16(0)).Times(1)
@@ -412,7 +497,8 @@ func testSessionAffinityNoEndpoint(t *testing.T, svcExternalIPs net.IP, svcIP ne
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockOFClient := ofmock.NewMockClient(ctrl)
-	fp := NewFakeProxier(mockOFClient, isIPv6)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient, isIPv6)
 
 	svcPort := 80
 	svcNodePort := 3001
@@ -425,7 +511,7 @@ func testSessionAffinityNoEndpoint(t *testing.T, svcExternalIPs net.IP, svcIP ne
 
 	makeServiceMap(fp,
 		makeTestService(svcPortName.Namespace, svcPortName.Name, func(svc *corev1.Service) {
-			svc.Spec.Type = "NodePort"
+			svc.Spec.Type = corev1.ServiceTypeNodePort
 			svc.Spec.ClusterIP = svcIP.String()
 			svc.Spec.ExternalIPs = []string{svcExternalIPs.String()}
 			svc.Spec.SessionAffinity = corev1.ServiceAffinityClientIP
@@ -461,6 +547,7 @@ func testSessionAffinityNoEndpoint(t *testing.T, svcExternalIPs net.IP, svcIP ne
 		bindingProtocol = binding.ProtocolTCPv6
 	}
 	groupID, _ := fp.groupCounter.Get(svcPortName)
+	mockRouteClient.EXPECT().ReconcileNodePort(gomock.Any(), gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallServiceGroup(groupID, true, gomock.Any()).Times(1)
 	mockOFClient.EXPECT().InstallEndpointFlows(bindingProtocol, gomock.Any(), isIPv6).Times(1)
 	mockOFClient.EXPECT().InstallServiceFlows(groupID, svcIP, uint16(svcPort), bindingProtocol, uint16(corev1.DefaultClientIPServiceAffinitySeconds)).Times(1)
@@ -493,7 +580,7 @@ func testSessionAffinity(t *testing.T, svcExternalIPs net.IP, svcIP net.IP, isIP
 
 	makeServiceMap(fp,
 		makeTestService(svcPortName.Namespace, svcPortName.Name, func(svc *corev1.Service) {
-			svc.Spec.Type = "NodePort"
+			svc.Spec.Type = corev1.ServiceTypeNodePort
 			svc.Spec.ClusterIP = svcIP.String()
 			svc.Spec.ExternalIPs = []string{svcExternalIPs.String()}
 			svc.Spec.SessionAffinity = corev1.ServiceAffinityClientIP
@@ -527,7 +614,8 @@ func testPortChange(t *testing.T, svcIP net.IP, epIP net.IP, isIPv6 bool) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockOFClient := ofmock.NewMockClient(ctrl)
-	fp := NewFakeProxier(mockOFClient, isIPv6)
+	mockRouteClient := routetesting.NewMockInterface(ctrl)
+	fp := NewFakeProxier(mockRouteClient, mockOFClient, isIPv6)
 
 	svcPort1 := 80
 	svcPort2 := 8080

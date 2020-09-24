@@ -81,14 +81,15 @@ type testPeerConfig struct {
 }
 
 type testConfig struct {
-	bridge      string
-	nodeConfig  *config1.NodeConfig
-	localPods   []*testLocalPodConfig
-	peers       []*testPeerConfig
-	serviceCIDR *net.IPNet
-	globalMAC   net.HardwareAddr
-	enableIPv6  bool
-	enableIPv4  bool
+	bridge       string
+	nodeConfig   *config1.NodeConfig
+	localPods    []*testLocalPodConfig
+	peers        []*testPeerConfig
+	serviceCIDR  *net.IPNet
+	globalMAC    net.HardwareAddr
+	enableIPv6   bool
+	enableIPv4   bool
+	localPodCIDR net.IPNet
 }
 
 var (
@@ -100,7 +101,7 @@ func TestConnectivityFlows(t *testing.T) {
 	// Initialize ovs metrics (Prometheus) to test them
 	metrics.InitializeOVSMetrics()
 
-	c = ofClient.NewClient(br, bridgeMgmtAddr, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, net.ParseIP("169.254.169.110"), true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 	defer func() {
@@ -127,7 +128,7 @@ func TestConnectivityFlows(t *testing.T) {
 }
 
 func TestReplayFlowsConnectivityFlows(t *testing.T) {
-	c = ofClient.NewClient(br, bridgeMgmtAddr, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, net.ParseIP("169.254.169.110"), true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 
@@ -154,7 +155,7 @@ func TestReplayFlowsConnectivityFlows(t *testing.T) {
 }
 
 func TestReplayFlowsNetworkPolicyFlows(t *testing.T) {
-	c = ofClient.NewClient(br, bridgeMgmtAddr, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, net.ParseIP("169.254.169.110"), true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge: %v", err))
 
@@ -326,7 +327,7 @@ func TestNetworkPolicyFlows(t *testing.T) {
 	// Initialize ovs metrics (Prometheus) to test them
 	metrics.InitializeOVSMetrics()
 
-	c = ofClient.NewClient(br, bridgeMgmtAddr, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, net.ParseIP("169.254.169.110"), true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", br))
 
@@ -467,7 +468,7 @@ type svcConfig struct {
 }
 
 func TestProxyServiceFlows(t *testing.T) {
-	c = ofClient.NewClient(br, bridgeMgmtAddr, true, false)
+	c = ofClient.NewClient(br, bridgeMgmtAddr, net.ParseIP("169.254.169.110"), true, false)
 	err := ofTestUtils.PrepareOVSBridge(br)
 	require.Nil(t, err, fmt.Sprintf("Failed to prepare OVS bridge %s", br))
 
@@ -805,7 +806,7 @@ func checkOVSFlowMetrics(t *testing.T, client ofClient.Client) {
 
 func testInstallGatewayFlows(t *testing.T, config *testConfig) {
 	gatewayConfig := config.nodeConfig.GatewayConfig
-	err := c.InstallGatewayFlows()
+	err := c.InstallGatewayFlows(nodeConfig.NodeIPAddr.IP)
 	if err != nil {
 		t.Fatalf("Failed to install Openflow entries for gateway: %v", err)
 	}
@@ -824,6 +825,7 @@ func testInstallGatewayFlows(t *testing.T, config *testConfig) {
 func prepareConfiguration() *testConfig {
 	podMAC, _ := net.ParseMAC("aa:aa:aa:aa:aa:13")
 	gwMAC, _ := net.ParseMAC("aa:aa:aa:aa:aa:11")
+	_, podCIDR, _ := net.ParseCIDR("192.168.1.1/24")
 	nodeIP, nodeSubnet, _ := net.ParseCIDR("10.10.10.1/24")
 	nodeSubnet.IP = nodeIP
 
@@ -858,6 +860,7 @@ func prepareConfiguration() *testConfig {
 		bridge:      br,
 		nodeConfig:  nodeConfig,
 		localPods:   []*testLocalPodConfig{podCfg},
+		localPodCIDR: *podCIDR,
 		peers:       []*testPeerConfig{peerNode},
 		serviceCIDR: serviceCIDR,
 		globalMAC:   vMAC,

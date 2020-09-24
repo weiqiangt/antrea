@@ -136,7 +136,7 @@ func TestInitialize(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Logf("Running Initialize test with mode %s node config %s", tc.networkConfig.TrafficEncapMode, nodeConfig)
-		routeClient, err := route.NewClient(serviceCIDR, tc.networkConfig, tc.noSNAT)
+		routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, tc.networkConfig, tc.noSNAT)
 		if err != nil {
 			t.Error(err)
 		}
@@ -263,7 +263,7 @@ func TestAddAndDeleteRoutes(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Logf("Running test with mode %s peer cidr %s peer ip %s node config %s", tc.mode, tc.peerCIDR, tc.peerIP, nodeConfig)
-		routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false)
+		routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false)
 		if err != nil {
 			t.Error(err)
 		}
@@ -371,7 +371,7 @@ func TestReconcile(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Logf("Running test with mode %s added routes %v desired routes %v", tc.mode, tc.addedRoutes, tc.desiredPeerCIDRs)
-		routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false)
+		routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false)
 		if err != nil {
 			t.Error(err)
 		}
@@ -419,7 +419,7 @@ func TestRouteTablePolicyOnly(t *testing.T) {
 	gwLink := createDummyGW(t)
 	defer netlink.LinkDel(gwLink)
 
-	routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeNetworkPolicyOnly}, false)
+	routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeNetworkPolicyOnly}, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -495,7 +495,7 @@ func TestIPv6RoutesAndNeighbors(t *testing.T) {
 	gwLink := createDummyGW(t)
 	defer netlink.LinkDel(gwLink)
 
-	routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeEncap}, false)
+	routeClient, err := route.NewClient(serviceCIDR, nil, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeEncap}, false)
 	assert.Nil(t, err)
 	_, ipv6Subnet, _ := net.ParseCIDR("fd74:ca9b:172:19::/64")
 	gwIPv6 := net.ParseIP("fd74:ca9b:172:19::1")

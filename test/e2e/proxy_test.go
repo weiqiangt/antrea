@@ -17,6 +17,7 @@ package e2e
 import (
 	"encoding/hex"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,45 @@ func skipIfProxyDisabled(t *testing.T, data *TestData) {
 	} else if !featureGate.Enabled(features.AntreaProxy) {
 		t.Skip("Skipping test because AntreaProxy is not enabled")
 	}
+}
+
+func TestProxyNodePortService(t *testing.T) {
+	data, err := setupTest(t)
+	if err != nil {
+		t.Fatalf("Error when setting up test: %v", err)
+	}
+	defer teardownTest(t, data)
+
+	skipIfProxyDisabled(t, data)
+	skipIfNumNodesLessThan(t, 2)
+
+	nodeName := nodeName(1)
+	require.NoError(t, data.createNginxPod("nginx", nodeName))
+	_, err = data.podWaitForIPs(defaultTimeout, "nginx", testNamespace)
+	require.NoError(t, err)
+	require.NoError(t, data.podWaitForRunning(defaultTimeout, "nginx", testNamespace))
+	svc, err := data.createNginxNodePortService(true)
+	require.NoError(t, err)
+	require.NoError(t, data.createBusyboxPodOnNode("busybox", nodeName))
+	require.NoError(t, data.podWaitForRunning(defaultTimeout, "busybox", testNamespace))
+	var nodePort string
+	for _, port := range svc.Spec.Ports {
+		if port.NodePort != 0 {
+			nodePort = fmt.Sprint(port.NodePort)
+			break
+		}
+	}
+	busyboxPod, err := data.podWaitFor(defaultTimeout, "busybox", testNamespace, func(pod *corev1.Pod) (bool, error) {
+		return pod.Status.Phase == corev1.PodRunning, nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, busyboxPod.Status)
+	_, _, err = data.runCommandFromPod(testNamespace, "busybox", busyboxContainerName, []string{"wget", "-O", "-", net.JoinHostPort(busyboxPod.Status.HostIP, nodePort), "-T", "1"})
+	require.NoError(t, err, "Service NodePort should be able to be connected from Pod")
+	_, _, _, err = RunCommandOnNode(masterNodeName(), strings.Join([]string{"wget", "-O", "-", net.JoinHostPort(busyboxPod.Status.HostIP, nodePort), "-T", "1"}, " "))
+	require.NoError(t, err, "Service NodePort should be able to be connected from Node IP address on Node which does not have Endpoint")
+	_, _, _, err = RunCommandOnNode(masterNodeName(), strings.Join([]string{"wget", "-O", "-", net.JoinHostPort("127.0.0.1", nodePort), "-T", "1"}, " "))
+	require.NoError(t, err, "Service NodePort should be able to be connected from loopback address on Node which does not have Endpoint")
 }
 
 func TestProxyServiceSessionAffinity(t *testing.T) {

@@ -303,7 +303,7 @@ func (i *Initializer) initOpenFlowPipeline() error {
 
 	// Set up flow entries for gateway interface, including classifier, skip spoof guard check,
 	// L3 forwarding and L2 forwarding
-	if err := i.ofClient.InstallGatewayFlows(); err != nil {
+	if err := i.ofClient.InstallGatewayFlows(i.nodeConfig.NodeIPAddr.IP); err != nil {
 		klog.Errorf("Failed to setup openflow entries for gateway: %v", err)
 		return err
 	}

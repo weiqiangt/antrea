@@ -88,9 +88,13 @@ func run(o *Options) error {
 	}
 	defer ovsdbConnection.Close()
 
+	nodePortVirtualIP := net.ParseIP(o.config.NodePortVirtualIP)
+	nodePortVirtualIPv6 := net.ParseIP(o.config.NodePortVirtualIPv6)
 	ovsBridgeClient := ovsconfig.NewOVSBridge(o.config.OVSBridge, o.config.OVSDatapathType, ovsdbConnection)
 	ovsBridgeMgmtAddr := ofconfig.GetMgmtAddress(o.config.OVSRunDir, o.config.OVSBridge)
 	ofClient := openflow.NewClient(o.config.OVSBridge, ovsBridgeMgmtAddr,
+		nodePortVirtualIP,
+		nodePortVirtualIPv6,
 		features.DefaultFeatureGate.Enabled(features.AntreaProxy),
 		features.DefaultFeatureGate.Enabled(features.AntreaPolicy))
 
@@ -107,7 +111,7 @@ func run(o *Options) error {
 		TrafficEncapMode:  encapMode,
 		EnableIPSecTunnel: o.config.EnableIPSecTunnel}
 
-	routeClient, err := route.NewClient(serviceCIDRNet, networkConfig, o.config.NoSNAT)
+	routeClient, err := route.NewClient(nodePortVirtualIP, nodePortVirtualIPv6, serviceCIDRNet, networkConfig, o.config.NoSNAT)
 	if err != nil {
 		return fmt.Errorf("error creating route client: %v", err)
 	}
@@ -179,17 +183,26 @@ func run(o *Options) error {
 
 	var proxier k8sproxy.Provider
 	if features.DefaultFeatureGate.Enabled(features.AntreaProxy) {
+		var nodePortAddresses []*net.IPNet
+		for _, nodePortAddress := range o.config.NodePortAddresses {
+			_, ipNet, _ := net.ParseCIDR(nodePortAddress)
+			nodePortAddresses = append(nodePortAddresses, ipNet)
+		}
 		v4Enabled := config.IsIPv4Enabled(nodeConfig, networkConfig.TrafficEncapMode)
 		v6Enabled := config.IsIPv6Enabled(nodeConfig, networkConfig.TrafficEncapMode)
+		var err error
 		switch {
 		case v4Enabled && v6Enabled:
-			proxier = proxy.NewDualStackProxier(nodeConfig.Name, informerFactory, ofClient)
+			proxier, err = proxy.NewDualStackProxier(nodePortVirtualIP, nodePortVirtualIPv6, nodePortAddresses, nodeConfig.Name, nodeConfig.PodIPv4CIDR, nodeConfig.PodIPv6CIDR, informerFactory, ofClient, routeClient)
 		case v4Enabled:
-			proxier = proxy.NewProxier(nodeConfig.Name, informerFactory, ofClient, false)
+			proxier, err = proxy.NewProxier(nodePortVirtualIP, nodePortAddresses, nodeConfig.Name, nodeConfig.PodIPv4CIDR, informerFactory, ofClient, routeClient, false)
 		case v6Enabled:
-			proxier = proxy.NewProxier(nodeConfig.Name, informerFactory, ofClient, true)
+			proxier, err = proxy.NewProxier(nodePortVirtualIP, nodePortAddresses, nodeConfig.Name, nodeConfig.PodIPv6CIDR, informerFactory, ofClient, routeClient, true)
 		default:
 			return fmt.Errorf("at least one of IPv4 or IPv6 should be enabled")
+		}
+		if err != nil {
+			return fmt.Errorf("error when creating Antrea Proxy: %w", err)
 		}
 	}
 

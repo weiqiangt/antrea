@@ -42,7 +42,7 @@ type Client interface {
 	Initialize(roundInfo types.RoundInfo, config *config.NodeConfig, encapMode config.TrafficEncapModeType) (<-chan struct{}, error)
 
 	// InstallGatewayFlows sets up flows related to an OVS gateway port, the gateway must exist.
-	InstallGatewayFlows() error
+	InstallGatewayFlows(nodeIP net.IP) error
 
 	// InstallClusterServiceCIDRFlows sets up the appropriate flows so that traffic can reach
 	// the different Services running in the Cluster. This method needs to be invoked once with
@@ -508,7 +508,7 @@ func (c *client) InstallClusterServiceCIDRFlows(serviceNets []*net.IPNet) error 
 	return nil
 }
 
-func (c *client) InstallGatewayFlows() error {
+func (c *client) InstallGatewayFlows(nodeIP net.IP) error {
 	gatewayConfig := c.nodeConfig.GatewayConfig
 	gatewayIPs := []net.IP{}
 
@@ -530,6 +530,13 @@ func (c *client) InstallGatewayFlows() error {
 	// Add flow to ensure the liveness check packet could be forwarded correctly.
 	flows = append(flows, c.localProbeFlow(gatewayIPs, cookie.Default)...)
 	flows = append(flows, c.ctRewriteDstMACFlows(gatewayConfig.MAC, cookie.Default)...)
+	// TODO: check functionality
+	if c.enableProxy {
+		flows = append(flows,
+			c.serviceGatewayFlow(),
+			c.arpNodePortVirtualResponderFlow(),
+		)
+	}
 	// In NoEncap , no traffic from tunnel port
 	if c.encapMode.SupportsEncap() {
 		flows = append(flows, c.l3FwdFlowToGateway(gatewayIPs, gatewayConfig.MAC, cookie.Default)...)
