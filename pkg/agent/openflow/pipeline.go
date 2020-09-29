@@ -238,7 +238,8 @@ var (
 	snatMarkRange = binding.Range{17, 17}
 	// hairpinMarkRange takes the 18th bit of register marksReg to indicate
 	// if the packet needs DNAT to virtual IP or not. Its value is 0x1 if yes.
-	hairpinMarkRange = binding.Range{18, 18}
+	hairpinMarkRange      = binding.Range{18, 18}
+	nodePortMasqMarkRange = binding.Range{19, 19}
 	// macRewriteMarkRange takes the 19th bit of register marksReg to indicate
 	// if the packet's MAC addresses need to be rewritten. Its value is 0x1 if yes.
 	macRewriteMarkRange = binding.Range{19, 19}
@@ -261,6 +262,7 @@ var (
 
 	globalVirtualMAC, _ = net.ParseMAC("aa:bb:cc:dd:ee:ff")
 	hairpinIP           = net.ParseIP("169.254.169.252").To4()
+	NodePortVirtualIP   = net.ParseIP("169.254.169.254").To4()
 )
 
 type OFEntryOperations interface {

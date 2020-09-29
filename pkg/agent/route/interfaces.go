@@ -37,6 +37,9 @@ type Interface interface {
 	// It should do nothing if the routes don't exist, without error.
 	DeleteRoutes(podCIDR *net.IPNet) error
 
+	// TODO:
+	AddNodePortRoute() error
+
 	// MigrateRoutesToGw should move routes from device linkname to local gateway.
 	MigrateRoutesToGw(linkName string) error
 

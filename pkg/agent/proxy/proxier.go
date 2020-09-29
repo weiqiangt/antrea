@@ -15,7 +15,9 @@
 package proxy
 
 import (
+	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +30,8 @@ import (
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
 	"github.com/vmware-tanzu/antrea/pkg/agent/proxy/types"
 	"github.com/vmware-tanzu/antrea/pkg/agent/querier"
+	"github.com/vmware-tanzu/antrea/pkg/agent/route"
+	"github.com/vmware-tanzu/antrea/pkg/agent/util/ipset"
 	binding "github.com/vmware-tanzu/antrea/pkg/ovs/openflow"
 	k8sproxy "github.com/vmware-tanzu/antrea/third_party/proxy"
 	"github.com/vmware-tanzu/antrea/third_party/proxy/config"
@@ -74,7 +78,8 @@ type proxier struct {
 	stopChan     <-chan struct{}
 	agentQuerier querier.AgentQuerier
 	ofClient     openflow.Client
-	nodeIP       net.IP
+	routeClient  route.Interface
+	nodeIP, gwIP net.IP
 }
 
 func (p *proxier) isInitialized() bool {
@@ -91,9 +96,17 @@ func (p *proxier) removeStaleServices() {
 			klog.Errorf("Failed to remove flows of Service %v: %v", svcPortName, err)
 			continue
 		}
-		if err := p.ofClient.UninstallServiceFlows(p.nodeIP, uint16(svcInfo.NodePort()), svcInfo.OFProtocol); err != nil {
-			klog.Error("Failed to remove NodePort flow of Service %v: %v", svcPortName, err)
-			continue
+		if svcInfo.NodePort() > 0 {
+			if err := ipset.DelEntry(route.AntreaNodePortSet, fmt.Sprintf("%s,%s:%d", p.nodeIP.String(), strings.ToLower(string(svcInfo.Protocol())), svcInfo.NodePort())); err != nil {
+				klog.Errorf("Error when adding NodePort to ipset %s: %v", route.AntreaNodePortSet, err)
+			}
+			if err := ipset.DelEntry(route.AntreaNodePortSet, fmt.Sprintf("%s,%s:%d", "127.0.0.1", strings.ToLower(string(svcInfo.Protocol())), svcInfo.NodePort())); err != nil {
+				klog.Errorf("Error when adding NodePort to ipset %s: %v", route.AntreaNodePortSet, err)
+			}
+			if err := p.ofClient.UninstallServiceFlows(p.nodeIP, uint16(svcInfo.NodePort()), svcInfo.OFProtocol); err != nil {
+				klog.Error("Failed to remove NodePort flow of Service %v: %v", svcPortName, err)
+				continue
+			}
 		}
 		for _, ingress := range svcInfo.LoadBalancerIPStrings() {
 			if ingress != "" {
@@ -200,7 +213,13 @@ func (p *proxier) installServices() {
 			}
 		}
 		if svcInfo.NodePort() > 0 {
-			if err := p.ofClient.InstallServiceFlows(groupID, p.nodeIP, uint16(svcInfo.NodePort()), svcInfo.OFProtocol, uint16(svcInfo.StickyMaxAgeSeconds())); err != nil {
+			if err := ipset.AddEntry(route.AntreaNodePortSet, fmt.Sprintf("%s,%s:%d", p.nodeIP.String(), strings.ToLower(string(svcInfo.Protocol())), svcInfo.NodePort())); err != nil {
+				klog.Errorf("Error when adding NodePort to ipset %s: %v", route.AntreaNodePortSet, err)
+			}
+			if err := ipset.AddEntry(route.AntreaNodePortSet, fmt.Sprintf("%s,%s:%d", "127.0.0.1", strings.ToLower(string(svcInfo.Protocol())), svcInfo.NodePort())); err != nil {
+				klog.Errorf("Error when adding NodePort to ipset %s: %v", route.AntreaNodePortSet, err)
+			}
+			if err := p.ofClient.InstallServiceFlows(groupID, openflow.NodePortVirtualIP, uint16(svcInfo.NodePort()), svcInfo.OFProtocol, uint16(svcInfo.StickyMaxAgeSeconds())); err != nil {
 				klog.Errorf("Error when installing Service NodePort flow %s: %v", svcInfo.String(), err)
 			}
 		}
@@ -304,6 +323,9 @@ func (p *proxier) deleteServiceByIP(serviceStr string) {
 
 func (p *proxier) Run(stopCh <-chan struct{}) {
 	p.once.Do(func() {
+		if err := p.routeClient.AddNodePortRoute(); err != nil {
+			panic(err)
+		}
 		go p.serviceConfig.Run(stopCh)
 		go p.endpointsConfig.Run(stopCh)
 		p.stopChan = stopCh
@@ -311,13 +333,20 @@ func (p *proxier) Run(stopCh <-chan struct{}) {
 	})
 }
 
-func New(nodeIP net.IP, hostname string, informerFactory informers.SharedInformerFactory, ofClient openflow.Client) *proxier {
+func New(
+	gwIP net.IP,
+	nodeIP net.IP,
+	hostname string,
+	informerFactory informers.SharedInformerFactory,
+	ofClient openflow.Client,
+	routeClient route.Interface) *proxier {
 	recorder := record.NewBroadcaster().NewRecorder(
 		runtime.NewScheme(),
 		corev1.EventSource{Component: componentName, Host: hostname},
 	)
 	p := &proxier{
 		nodeIP:               nodeIP,
+		gwIP:                 gwIP,
 		endpointsConfig:      config.NewEndpointsConfig(informerFactory.Core().V1().Endpoints(), resyncPeriod),
 		serviceConfig:        config.NewServiceConfig(informerFactory.Core().V1().Services(), resyncPeriod),
 		endpointsChanges:     newEndpointsChangesTracker(hostname),
@@ -329,6 +358,7 @@ func New(nodeIP net.IP, hostname string, informerFactory informers.SharedInforme
 		serviceStringMap:     map[string]k8sproxy.ServicePortName{},
 		groupCounter:         types.NewGroupCounter(),
 		ofClient:             ofClient,
+		routeClient:          routeClient,
 	}
 	p.serviceConfig.RegisterEventHandler(p)
 	p.endpointsConfig.RegisterEventHandler(p)

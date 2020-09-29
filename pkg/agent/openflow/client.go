@@ -450,6 +450,7 @@ func (c *client) InstallClusterServiceFlows() error {
 		c.sessionAffinityReselectFlow(),
 		c.serviceLBBypassFlow(),
 	}
+	//flows = append(flows, c.nodePortFlows()...)
 	if err := c.ofEntryOperations.AddAll(flows); err != nil {
 		return err
 	}

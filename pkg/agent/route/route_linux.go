@@ -20,6 +20,7 @@ import (
 	"net"
 	"os/exec"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/vishvananda/netlink"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/klog"
 
 	"github.com/vmware-tanzu/antrea/pkg/agent/config"
+	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
 	"github.com/vmware-tanzu/antrea/pkg/agent/util"
 	"github.com/vmware-tanzu/antrea/pkg/agent/util/ipset"
 	"github.com/vmware-tanzu/antrea/pkg/agent/util/iptables"
@@ -37,12 +39,13 @@ import (
 const (
 	// Antrea managed ipset.
 	// antreaPodIPSet contains all Pod CIDRs of this cluster.
-	antreaPodIPSet = "ANTREA-POD-IP"
-
+	antreaPodIPSet    = "ANTREA-POD-IP"
+	AntreaNodePortSet = "ANTREA-NODE-PORT"
 	// Antrea managed iptables chains.
-	antreaForwardChain     = "ANTREA-FORWARD"
-	antreaPostRoutingChain = "ANTREA-POSTROUTING"
-	antreaMangleChain      = "ANTREA-MANGLE"
+	antreaForwardChain          = "ANTREA-FORWARD"
+	antreaNodePortServicesChain = "ANTREA-NODEPORT-SERVICES"
+	antreaPostRoutingChain      = "ANTREA-POSTROUTING"
+	antreaMangleChain           = "ANTREA-MANGLE"
 )
 
 // Client implements Interface.
@@ -118,6 +121,9 @@ func (c *Client) initIPSet() error {
 	if err := ipset.CreateIPSet(antreaPodIPSet, ipset.HashNet); err != nil {
 		return err
 	}
+	if err := ipset.CreateIPSet(AntreaNodePortSet, ipset.HashIPPort); err != nil {
+		return err
+	}
 	// Ensure its own PodCIDR is in it.
 	if err := ipset.AddEntry(antreaPodIPSet, c.nodeConfig.PodCIDR.String()); err != nil {
 		return err
@@ -154,17 +160,26 @@ func (c *Client) initIPTables() error {
 	// Create the antrea managed chains and link them to built-in chains.
 	// We cannot use iptables-restore for these jump rules because there
 	// are non antrea managed rules in built-in chains.
-	jumpRules := []struct{ table, srcChain, dstChain, comment string }{
-		{iptables.FilterTable, iptables.ForwardChain, antreaForwardChain, "Antrea: jump to Antrea forwarding rules"},
-		{iptables.NATTable, iptables.PostRoutingChain, antreaPostRoutingChain, "Antrea: jump to Antrea postrouting rules"},
-		{iptables.MangleTable, iptables.PreRoutingChain, antreaMangleChain, "Antrea: jump to Antrea mangle rules"},
+	jumpRules := []struct {
+		table, srcChain, dstChain string
+		additionalSpecs           []string
+		prepend                   bool
+	}{
+		{iptables.FilterTable, iptables.ForwardChain, antreaForwardChain, []string{}, false},
+		{iptables.NATTable, iptables.PreRoutingChain, antreaNodePortServicesChain, []string{"-m", "addrtype", "--dst-type", "LOCAL"}, true},
+		{iptables.NATTable, iptables.OutputChain, antreaNodePortServicesChain, []string{"-m", "addrtype", "--dst-type", "LOCAL"}, true},
+		{iptables.NATTable, iptables.PostRoutingChain, antreaPostRoutingChain, []string{}, false},
+		{iptables.MangleTable, iptables.PreRoutingChain, antreaMangleChain, []string{}, false},
 	}
 	for _, rule := range jumpRules {
 		if err := c.ipt.EnsureChain(rule.table, rule.dstChain); err != nil {
 			return err
 		}
-		ruleSpec := []string{"-j", rule.dstChain, "-m", "comment", "--comment", rule.comment}
-		if err := c.ipt.EnsureRule(rule.table, rule.srcChain, ruleSpec); err != nil {
+		ruleSpec := append(rule.additionalSpecs,
+			"-j", rule.dstChain,
+			"-m", "comment", "--comment", fmt.Sprintf("Antrea: jump to %s rules", strings.ReplaceAll(strings.ToLower(rule.dstChain), "-", " ")),
+		)
+		if err := c.ipt.EnsureRule(rule.table, rule.srcChain, ruleSpec, rule.prepend); err != nil {
 			return err
 		}
 	}
@@ -194,6 +209,12 @@ func (c *Client) initIPTables() error {
 	}...)
 	writeLine(iptablesData, []string{
 		"-A", antreaForwardChain,
+		"-m", "set",
+		"--match-set", "ANTREA-NODE-PORT", "dst,dst",
+		"-j", iptables.AcceptTarget,
+	}...)
+	writeLine(iptablesData, []string{
+		"-A", antreaForwardChain,
 		"-m", "comment", "--comment", `"Antrea: accept packets to local pods"`,
 		"-o", hostGateway,
 		"-j", iptables.AcceptTarget,
@@ -204,6 +225,7 @@ func (c *Client) initIPTables() error {
 	// Antrea should not get involved.
 	writeLine(iptablesData, "*nat")
 	writeLine(iptablesData, iptables.MakeChainLine(antreaPostRoutingChain))
+	writeLine(iptablesData, iptables.MakeChainLine(antreaNodePortServicesChain))
 	if !c.encapMode.IsNetworkPolicyOnly() {
 		writeLine(iptablesData, []string{
 			"-A", antreaPostRoutingChain,
@@ -212,6 +234,12 @@ func (c *Client) initIPTables() error {
 			"-j", iptables.MasqueradeTarget,
 		}...)
 	}
+	writeLine(iptablesData, []string{
+		"-A", antreaNodePortServicesChain,
+		"-m", "set",
+		"--match-set", "ANTREA-NODE-PORT", "dst,dst",
+		"-j", iptables.DNATTarget, "--to-destination", openflow.NodePortVirtualIP.String(),
+	}...)
 	writeLine(iptablesData, "COMMIT")
 
 	// Setting --noflush to keep the previous contents (i.e. non antrea managed chains) of the tables.
@@ -269,6 +297,9 @@ func (c *Client) Reconcile(podCIDRs []string) error {
 		if reflect.DeepEqual(route.Dst, c.nodeConfig.PodCIDR) {
 			continue
 		}
+		if route.Dst.Contains(openflow.NodePortVirtualIP) {
+			continue
+		}
 		if desiredPodCIDRs.Has(route.Dst.String()) {
 			continue
 		}
@@ -313,6 +344,22 @@ func (c *Client) AddRoutes(podCIDR *net.IPNet, nodeIP, nodeGwIP net.IP) error {
 		return fmt.Errorf("failed to install route to peer %s with netlink: %v", nodeIP, err)
 	}
 	c.nodeRoutes.Store(podCIDRStr, route)
+	return nil
+}
+
+func (c *Client) AddNodePortRoute() error {
+	route := &netlink.Route{
+		Dst: &net.IPNet{
+			IP:   openflow.NodePortVirtualIP,
+			Mask: net.IPv4Mask(255, 255, 255, 255),
+		},
+	}
+	route.LinkIndex = c.nodeConfig.GatewayConfig.LinkIndex
+	klog.Warningln(route.String())
+	if err := netlink.RouteReplace(route); err != nil {
+		return fmt.Errorf("failed to install NodePort route: %w", err)
+	}
+	c.nodeRoutes.Store(openflow.NodePortVirtualIP.String(), route)
 	return nil
 }
 
