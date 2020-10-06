@@ -774,6 +774,31 @@ func (c *client) arpResponderFlow(peerGatewayIP net.IP, category cookie.Category
 		Done()
 }
 
+func (c *client) arpNodePortVirtualResponderFlow(gatewayOFPort uint32) []binding.Flow {
+	return []binding.Flow{
+		c.pipeline[spoofGuardTable].BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolARP).
+			MatchInPort(gatewayOFPort).
+			MatchARPTpa(NodePortVirtualIP).
+			MatchARPSpa(c.nodeConfig.NodeIPAddr.IP).
+			Action().GotoTable(arpResponderTable).
+			Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+			Done(),
+		c.pipeline[arpResponderTable].BuildFlow(priorityNormal).MatchProtocol(binding.ProtocolARP).
+			MatchARPOp(1).
+			MatchARPTpa(NodePortVirtualIP).
+			Action().Move(binding.NxmFieldSrcMAC, binding.NxmFieldDstMAC).
+			Action().SetSrcMAC(globalVirtualMAC).
+			Action().LoadARPOperation(2).
+			Action().Move(binding.NxmFieldARPSha, binding.NxmFieldARPTha).
+			Action().SetARPSha(globalVirtualMAC).
+			Action().Move(binding.NxmFieldARPSpa, binding.NxmFieldARPTpa).
+			Action().SetARPSpa(NodePortVirtualIP).
+			Action().OutputInPort().
+			Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+			Done(),
+	}
+}
+
 // arpResponderStaticFlow generates ARP reply for any ARP request with the same global virtual MAC.
 // This flow is used in policy-only mode, where traffic are routed via IP not MAC.
 func (c *client) arpResponderStaticFlow(category cookie.Category) binding.Flow {

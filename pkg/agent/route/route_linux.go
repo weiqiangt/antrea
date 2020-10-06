@@ -40,12 +40,14 @@ const (
 	// Antrea managed ipset.
 	// antreaPodIPSet contains all Pod CIDRs of this cluster.
 	antreaPodIPSet    = "ANTREA-POD-IP"
-	AntreaNodePortSet = "ANTREA-NODE-PORT"
+	AntreaNodePortSet = "ANTREA-NODEPORT"
+	AntreaNodeIPSet   = "ANTREA-NODE-IP"
 	// Antrea managed iptables chains.
-	antreaForwardChain          = "ANTREA-FORWARD"
-	antreaNodePortServicesChain = "ANTREA-NODEPORT-SERVICES"
-	antreaPostRoutingChain      = "ANTREA-POSTROUTING"
-	antreaMangleChain           = "ANTREA-MANGLE"
+	antreaForwardChain              = "ANTREA-FORWARD"
+	antreaNodePortServicesChain     = "ANTREA-NODEPORT"
+	antreaNodePortServicesSNATChain = "ANTREA-NODEPORT-MANGLE"
+	antreaPostRoutingChain          = "ANTREA-POSTROUTING"
+	antreaMangleChain               = "ANTREA-MANGLE"
 )
 
 // Client implements Interface.
@@ -121,7 +123,12 @@ func (c *Client) initIPSet() error {
 	if err := ipset.CreateIPSet(antreaPodIPSet, ipset.HashNet); err != nil {
 		return err
 	}
-	if err := ipset.CreateIPSet(AntreaNodePortSet, ipset.HashIPPort); err != nil {
+	// Store Node IP.
+	if err := ipset.CreateIPSet(AntreaNodeIPSet, ipset.HashIP); err != nil {
+		return err
+	}
+	// Store NodePort number.
+	if err := ipset.CreateIPSet(AntreaNodePortSet, ipset.BitmapPort); err != nil {
 		return err
 	}
 	// Ensure its own PodCIDR is in it.
@@ -166,8 +173,8 @@ func (c *Client) initIPTables() error {
 		prepend                   bool
 	}{
 		{iptables.FilterTable, iptables.ForwardChain, antreaForwardChain, []string{}, false},
-		{iptables.NATTable, iptables.PreRoutingChain, antreaNodePortServicesChain, []string{"-m", "addrtype", "--dst-type", "LOCAL"}, true},
-		{iptables.NATTable, iptables.OutputChain, antreaNodePortServicesChain, []string{"-m", "addrtype", "--dst-type", "LOCAL"}, true},
+		{iptables.NATTable, iptables.PreRoutingChain, antreaNodePortServicesChain, []string{}, true},
+		{iptables.NATTable, iptables.PostRoutingChain, antreaNodePortServicesSNATChain, []string{}, true},
 		{iptables.NATTable, iptables.PostRoutingChain, antreaPostRoutingChain, []string{}, false},
 		{iptables.MangleTable, iptables.PreRoutingChain, antreaMangleChain, []string{}, false},
 	}
@@ -209,12 +216,6 @@ func (c *Client) initIPTables() error {
 	}...)
 	writeLine(iptablesData, []string{
 		"-A", antreaForwardChain,
-		"-m", "set",
-		"--match-set", "ANTREA-NODE-PORT", "dst,dst",
-		"-j", iptables.AcceptTarget,
-	}...)
-	writeLine(iptablesData, []string{
-		"-A", antreaForwardChain,
 		"-m", "comment", "--comment", `"Antrea: accept packets to local pods"`,
 		"-o", hostGateway,
 		"-j", iptables.AcceptTarget,
@@ -226,6 +227,7 @@ func (c *Client) initIPTables() error {
 	writeLine(iptablesData, "*nat")
 	writeLine(iptablesData, iptables.MakeChainLine(antreaPostRoutingChain))
 	writeLine(iptablesData, iptables.MakeChainLine(antreaNodePortServicesChain))
+	writeLine(iptablesData, iptables.MakeChainLine(antreaNodePortServicesSNATChain))
 	if !c.encapMode.IsNetworkPolicyOnly() {
 		writeLine(iptablesData, []string{
 			"-A", antreaPostRoutingChain,
@@ -234,12 +236,25 @@ func (c *Client) initIPTables() error {
 			"-j", iptables.MasqueradeTarget,
 		}...)
 	}
+	writeLine(iptablesData,
+		"-A", antreaNodePortServicesChain,
+		"-m", "state",
+		"--state", "RELATED,ESTABLISHED",
+		"-j", iptables.AcceptTarget,
+	)
 	writeLine(iptablesData, []string{
 		"-A", antreaNodePortServicesChain,
 		"-m", "set",
 		"--match-set", "ANTREA-NODE-PORT", "dst,dst",
 		"-j", iptables.DNATTarget, "--to-destination", openflow.NodePortVirtualIP.String(),
 	}...)
+	writeLine(iptablesData,
+		"-A", antreaNodePortServicesSNATChain,
+		"-m", "comment", "--comment", `"Antrea: mangle node port traffic"`,
+		"-d", openflow.NodePortVirtualIP.String(),
+		"-o", hostGateway,
+		"-j", "SNAT", "--to-source", c.nodeConfig.NodeIPAddr.IP.String(),
+	)
 	writeLine(iptablesData, "COMMIT")
 
 	// Setting --noflush to keep the previous contents (i.e. non antrea managed chains) of the tables.
@@ -348,11 +363,14 @@ func (c *Client) AddRoutes(podCIDR *net.IPNet, nodeIP, nodeGwIP net.IP) error {
 }
 
 func (c *Client) AddNodePortRoute() error {
+	nodePortVirtualNet := &net.IPNet{
+		IP:   openflow.NodePortVirtualIP,
+		Mask: net.IPv4Mask(255, 255, 255, 255),
+	}
 	route := &netlink.Route{
-		Dst: &net.IPNet{
-			IP:   openflow.NodePortVirtualIP,
-			Mask: net.IPv4Mask(255, 255, 255, 255),
-		},
+		Dst:   nodePortVirtualNet,
+		Gw:    openflow.NodePortVirtualIP,
+		Flags: int(netlink.FLAG_ONLINK),
 	}
 	route.LinkIndex = c.nodeConfig.GatewayConfig.LinkIndex
 	klog.Warningln(route.String())

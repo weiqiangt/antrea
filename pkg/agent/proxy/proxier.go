@@ -24,9 +24,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog"
 
+	"github.com/vmware-tanzu/antrea/pkg/agent/controller/noderoute"
 	"github.com/vmware-tanzu/antrea/pkg/agent/openflow"
 	"github.com/vmware-tanzu/antrea/pkg/agent/proxy/types"
 	"github.com/vmware-tanzu/antrea/pkg/agent/querier"
@@ -54,6 +56,7 @@ type proxier struct {
 	once            sync.Once
 	endpointsConfig *config.EndpointsConfig
 	serviceConfig   *config.ServiceConfig
+	nodeInformer    cache.SharedInformer
 	// endpointsChanges and serviceChanges contains all changes to endpoints and
 	// services that happened since last syncProxyRules call. For a single object,
 	// changes are accumulated. Once both endpointsChanges and serviceChanges
@@ -326,6 +329,7 @@ func (p *proxier) Run(stopCh <-chan struct{}) {
 		if err := p.routeClient.AddNodePortRoute(); err != nil {
 			panic(err)
 		}
+		go p.nodeInformer.Run(stopCh)
 		go p.serviceConfig.Run(stopCh)
 		go p.endpointsConfig.Run(stopCh)
 		p.stopChan = stopCh
@@ -351,6 +355,7 @@ func New(
 		serviceConfig:        config.NewServiceConfig(informerFactory.Core().V1().Services(), resyncPeriod),
 		endpointsChanges:     newEndpointsChangesTracker(hostname),
 		serviceChanges:       newServiceChangesTracker(recorder),
+		nodeInformer:         informerFactory.Core().V1().Nodes().Informer(),
 		serviceMap:           k8sproxy.ServiceMap{},
 		serviceInstalledMap:  k8sproxy.ServiceMap{},
 		endpointInstalledMap: map[k8sproxy.ServicePortName]map[string]struct{}{},
@@ -360,6 +365,42 @@ func New(
 		ofClient:             ofClient,
 		routeClient:          routeClient,
 	}
+	p.nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			ip, err := noderoute.GetNodeAddr(obj.(*corev1.Node))
+			if err != nil {
+				return
+			}
+			if err := ipset.AddEntry(route.AntreaNodeIPSet, ip.String()); err != nil {
+				// TODO: handle it.
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			ip, err := noderoute.GetNodeAddr(oldObj.(*corev1.Node))
+			if err != nil {
+				return
+			}
+			if err := ipset.DelEntry(route.AntreaNodeIPSet, ip.String()); err != nil {
+				// TODO: handle it.
+			}
+			ip, err = noderoute.GetNodeAddr(newObj.(*corev1.Node))
+			if err != nil {
+				return
+			}
+			if err := ipset.AddEntry(route.AntreaNodeIPSet, ip.String()); err != nil {
+				// TODO: handle it.
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			ip, err := noderoute.GetNodeAddr(obj.(*corev1.Node))
+			if err != nil {
+				return
+			}
+			if err := ipset.DelEntry(route.AntreaNodeIPSet, ip.String()); err != nil {
+				// TODO: handle it.
+			}
+		},
+	})
 	p.serviceConfig.RegisterEventHandler(p)
 	p.endpointsConfig.RegisterEventHandler(p)
 	p.runner = k8sproxy.NewBoundedFrequencyRunner(componentName, p.syncProxyRules, 0, 30*time.Second, -1)

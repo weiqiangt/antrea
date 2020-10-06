@@ -37,6 +37,7 @@ const (
 	MarkTarget       = "MARK"
 	ConnTrackTarget  = "CT"
 	DNATTarget       = "DNAT"
+	DropTarget       = "DROP"
 
 	PreRoutingChain  = "PREROUTING"
 	ForwardChain     = "FORWARD"

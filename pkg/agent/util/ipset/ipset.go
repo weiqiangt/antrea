@@ -28,6 +28,8 @@ const (
 	// The lookup time grows linearly with the number of the different prefix values added to the set.
 	HashNet    SetType = "hash:net"
 	HashIPPort SetType = "hash:ip,port"
+	HashIP     SetType = "hash:ip"
+	BitmapPort SetType = "bitmap:port"
 )
 
 // memberPattern is used to match the members part of ipset list result.
@@ -35,7 +37,12 @@ var memberPattern = regexp.MustCompile("(?m)^(.*\n)*Members:\n")
 
 // CreateIPSet creates a new set, it will ignore error when the set already exists.
 func CreateIPSet(name string, setType SetType) error {
-	cmd := exec.Command("ipset", "create", name, string(setType), "-exist")
+	var cmd *exec.Cmd
+	if setType == BitmapPort {
+		cmd = exec.Command("ipset", "create", name, string(setType), "range", "1-65535", "-exist")
+	} else {
+		cmd = exec.Command("ipset", "create", name, string(setType), "-exist")
+	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("error creating ipset %s: %v", name, err)
 	}
