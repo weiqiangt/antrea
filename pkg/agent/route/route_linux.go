@@ -40,8 +40,7 @@ const (
 	// Antrea managed ipset.
 	// antreaPodIPSet contains all Pod CIDRs of this cluster.
 	antreaPodIPSet    = "ANTREA-POD-IP"
-	AntreaNodePortSet = "ANTREA-NODEPORT"
-	AntreaNodeIPSet   = "ANTREA-NODE-IP"
+	AntreaNodePortSet = "ANTREA-NODE-PORT"
 	// Antrea managed iptables chains.
 	antreaForwardChain              = "ANTREA-FORWARD"
 	antreaNodePortServicesChain     = "ANTREA-NODEPORT"
@@ -123,12 +122,7 @@ func (c *Client) initIPSet() error {
 	if err := ipset.CreateIPSet(antreaPodIPSet, ipset.HashNet); err != nil {
 		return err
 	}
-	// Store Node IP.
-	if err := ipset.CreateIPSet(AntreaNodeIPSet, ipset.HashIP); err != nil {
-		return err
-	}
-	// Store NodePort number.
-	if err := ipset.CreateIPSet(AntreaNodePortSet, ipset.BitmapPort); err != nil {
+	if err := ipset.CreateIPSet(AntreaNodePortSet, ipset.HashIPPort); err != nil {
 		return err
 	}
 	// Ensure its own PodCIDR is in it.
@@ -176,6 +170,7 @@ func (c *Client) initIPTables() error {
 		{iptables.NATTable, iptables.PreRoutingChain, antreaNodePortServicesChain, []string{}, true},
 		{iptables.NATTable, iptables.PostRoutingChain, antreaNodePortServicesSNATChain, []string{}, true},
 		{iptables.NATTable, iptables.PostRoutingChain, antreaPostRoutingChain, []string{}, false},
+		{iptables.NATTable, iptables.OutputChain, antreaNodePortServicesChain, []string{}, true},
 		{iptables.MangleTable, iptables.PreRoutingChain, antreaMangleChain, []string{}, false},
 	}
 	for _, rule := range jumpRules {
@@ -236,12 +231,6 @@ func (c *Client) initIPTables() error {
 			"-j", iptables.MasqueradeTarget,
 		}...)
 	}
-	writeLine(iptablesData,
-		"-A", antreaNodePortServicesChain,
-		"-m", "state",
-		"--state", "RELATED,ESTABLISHED",
-		"-j", iptables.AcceptTarget,
-	)
 	writeLine(iptablesData, []string{
 		"-A", antreaNodePortServicesChain,
 		"-m", "set",

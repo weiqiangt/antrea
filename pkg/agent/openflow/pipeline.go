@@ -1415,6 +1415,17 @@ func (c *client) serviceEndpointGroup(groupID binding.GroupIDType, withSessionAf
 	return group
 }
 
+func (c *client) serviceGatewayFlow() binding.Flow {
+	return c.pipeline[conntrackCommitTable].BuildFlow(priorityHigh).
+		MatchProtocol(binding.ProtocolIP).
+		MatchCTMark(serviceCTMark).
+		MatchCTStateNew(true).
+		MatchCTStateTrk(true).
+		MatchRegRange(int(marksReg), markTrafficFromGateway, binding.Range{0, 15}).
+		Action().GotoTable(L2ForwardingOutTable).
+		Done()
+}
+
 // policyConjKeyFuncKeyFunc knows how to get key of a *policyRuleConjunction.
 func policyConjKeyFunc(obj interface{}) (string, error) {
 	conj := obj.(*policyRuleConjunction)

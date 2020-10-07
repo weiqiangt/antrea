@@ -476,6 +476,9 @@ func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.Hardware
 		c.l2ForwardCalcFlow(gatewayMAC, gatewayOFPort, cookie.Default),
 		c.localProbeFlow(gatewayAddr, cookie.Default),
 	}
+	if c.enableProxy {
+		flows = append(flows, c.serviceGatewayFlow())
+	}
 	// TODO: here
 	flows = append(flows, c.arpNodePortVirtualResponderFlow(gatewayOFPort)...)
 	// In NoEncap , no traffic from tunnel port
