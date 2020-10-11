@@ -220,9 +220,10 @@ const (
 	macRewriteMark   = 0b1
 	cnpDropMark      = 0b1
 
-	gatewayCTMark = 0x20
-	snatCTMark    = 0x40
-	serviceCTMark = 0x21
+	gatewayCTMark  = 0x20
+	snatCTMark     = 0x40
+	serviceCTMark  = 0x21
+	nodePortCTMark = 0x22
 )
 
 var (
@@ -238,8 +239,7 @@ var (
 	snatMarkRange = binding.Range{17, 17}
 	// hairpinMarkRange takes the 18th bit of register marksReg to indicate
 	// if the packet needs DNAT to virtual IP or not. Its value is 0x1 if yes.
-	hairpinMarkRange      = binding.Range{18, 18}
-	nodePortMasqMarkRange = binding.Range{19, 19}
+	hairpinMarkRange = binding.Range{18, 18}
 	// macRewriteMarkRange takes the 19th bit of register marksReg to indicate
 	// if the packet's MAC addresses need to be rewritten. Its value is 0x1 if yes.
 	macRewriteMarkRange = binding.Range{19, 19}
@@ -656,6 +656,32 @@ func (c *client) l2ForwardOutputServiceHairpinFlow() binding.Flow {
 		Action().OutputInPort().
 		Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
 		Done()
+}
+
+// TODO: to generate a symmetric path.
+func (c *client) nodePortTunnelFlows(tunnelPeerIP net.IP, tunOFPort uint32) []binding.Flow {
+	ctStateTable := c.pipeline[conntrackStateTable]
+	return []binding.Flow{
+		ctStateTable.BuildFlow(priorityNormal).
+			MatchProtocol(binding.ProtocolIP).
+			MatchRegRange(int(marksReg), markTrafficFromTunnel, binding.Range{0, 15}).
+			MatchSrcIP(tunnelPeerIP).
+			MatchDstIPNet(*c.nodeConfig.PodCIDR).
+			Action().CT(true, ctStateTable.GetNext(), CtZone).
+			LoadToMark(nodePortCTMark).
+			CTDone().
+			Done(),
+		c.pipeline[l3ForwardingTable].BuildFlow(priorityNormal).
+			MatchProtocol(binding.ProtocolIP).
+			MatchCTMark(nodePortCTMark).
+			Action().DecTTL().
+			Action().LoadRegRange(int(portCacheReg), tunOFPort, ofPortRegRange).
+			Action().LoadRegRange(int(marksReg), portFoundMark, ofPortMarkRange).
+			Action().SetTunnelDst(tunnelPeerIP).
+			Action().GotoTable(conntrackCommitTable).
+			Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
+			Done(),
+	}
 }
 
 // l3FlowsToPod generates the flow to rewrite MAC if the packet is received from tunnel port and destined for local Pods.
@@ -1149,6 +1175,7 @@ func (c *client) localProbeFlow(localGatewayIP net.IP, category cookie.Category)
 		Done()
 }
 
+// TODO: take care of it.
 func (c *client) bridgeAndUplinkFlows(uplinkOfport uint32, bridgeLocalPort uint32, nodeIP net.IP, localSubnet net.IPNet, category cookie.Category) []binding.Flow {
 	snatIPRange := &binding.IPRange{StartIP: nodeIP, EndIP: nodeIP}
 	vMACInt, _ := strconv.ParseUint(strings.Replace(globalVirtualMAC.String(), ":", "", -1), 16, 64)
@@ -1415,6 +1442,7 @@ func (c *client) serviceEndpointGroup(groupID binding.GroupIDType, withSessionAf
 	return group
 }
 
+// TODO: serviceGatewayFlow replies packets back to external addresses.
 func (c *client) serviceGatewayFlow() binding.Flow {
 	return c.pipeline[conntrackCommitTable].BuildFlow(priorityHigh).
 		MatchProtocol(binding.ProtocolIP).
@@ -1423,6 +1451,21 @@ func (c *client) serviceGatewayFlow() binding.Flow {
 		MatchCTStateTrk(true).
 		MatchRegRange(int(marksReg), markTrafficFromGateway, binding.Range{0, 15}).
 		Action().GotoTable(L2ForwardingOutTable).
+		Done()
+}
+
+// TODO
+func (c *client) nodePortServiceL3ForwardFlow(dstMAC net.HardwareAddr) binding.Flow {
+	l3FwdTable := c.pipeline[l3ForwardingTable]
+	return c.pipeline[l3ForwardingTable].BuildFlow(priorityNormal).
+		MatchRegRange(int(marksReg), macRewriteMark, macRewriteMarkRange).
+		MatchProtocol(binding.ProtocolIP).
+		MatchSrcIP(NodePortVirtualIP).
+		MatchDstIP(c.nodeConfig.NodeIPAddr.IP).
+		Action().SetDstMAC(dstMAC).
+		Action().DecTTL().
+		Action().GotoTable(l3FwdTable.GetNext()).
+		Cookie(c.cookieAllocator.Request(cookie.Service).Raw()).
 		Done()
 }
 

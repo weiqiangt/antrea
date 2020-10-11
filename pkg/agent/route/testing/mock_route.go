@@ -49,6 +49,20 @@ func (m *MockInterface) EXPECT() *MockInterfaceMockRecorder {
 	return m.recorder
 }
 
+// AddNodePortRoute mocks base method
+func (m *MockInterface) AddNodePortRoute() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddNodePortRoute")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddNodePortRoute indicates an expected call of AddNodePortRoute
+func (mr *MockInterfaceMockRecorder) AddNodePortRoute() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddNodePortRoute", reflect.TypeOf((*MockInterface)(nil).AddNodePortRoute))
+}
+
 // AddRoutes mocks base method
 func (m *MockInterface) AddRoutes(arg0 *net.IPNet, arg1, arg2 net.IP) error {
 	m.ctrl.T.Helper()

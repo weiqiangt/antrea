@@ -296,6 +296,9 @@ func (c *client) InstallNodeFlows(hostname string,
 	}
 	if c.encapMode.NeedsEncapToPeer(tunnelPeerIP, c.nodeConfig.NodeIPAddr) {
 		flows = append(flows, c.l3FwdFlowToRemote(localGatewayMAC, peerPodCIDR, tunnelPeerIP, tunOFPort, cookie.Node))
+		if c.enableProxy {
+			flows = append(flows, c.nodePortTunnelFlows(tunnelPeerIP, tunOFPort)...)
+		}
 	} else {
 		flows = append(flows, c.l3FwdFlowToRemoteViaGW(localGatewayMAC, peerPodCIDR, cookie.Node))
 	}
@@ -450,7 +453,6 @@ func (c *client) InstallClusterServiceFlows() error {
 		c.sessionAffinityReselectFlow(),
 		c.serviceLBBypassFlow(),
 	}
-	//flows = append(flows, c.nodePortFlows()...)
 	if err := c.ofEntryOperations.AddAll(flows); err != nil {
 		return err
 	}
@@ -477,7 +479,10 @@ func (c *client) InstallGatewayFlows(gatewayAddr net.IP, gatewayMAC net.Hardware
 		c.localProbeFlow(gatewayAddr, cookie.Default),
 	}
 	if c.enableProxy {
-		flows = append(flows, c.serviceGatewayFlow())
+		flows = append(flows,
+			c.nodePortServiceL3ForwardFlow(gatewayMAC),
+			c.serviceGatewayFlow(),
+		)
 	}
 	// TODO: here
 	flows = append(flows, c.arpNodePortVirtualResponderFlow(gatewayOFPort)...)
