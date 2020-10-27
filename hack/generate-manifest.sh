@@ -37,6 +37,7 @@ Generate a YAML manifest for Antrea using Kustomize and print it to stdout.
         --on-delete                   Generate a manifest with antrea-agent's update strategy set to OnDelete.
                                       This option will work only for Kind clusters (when using '--kind').
         --coverage                    Generates a manifest which supports measuring code coverage of Antrea binaries.
+        --simulator                   Run simulator
         --help, -h                    Print this message and exit
 
 In 'release' mode, environment variables IMG_NAME and IMG_TAG must be set.
@@ -68,6 +69,7 @@ TUN_TYPE="geneve"
 VERBOSE_LOG=false
 ON_DELETE=false
 COVERAGE=false
+SIMULATOR=false
 
 while [[ $# -gt 0 ]]
 do
@@ -124,6 +126,10 @@ case $key in
     ;;
     --coverage)
     COVERAGE=true
+    shift
+    ;;
+    --simulator)
+    SIMULATOR=true
     shift
     ;;
     -h|--help)
@@ -312,6 +318,16 @@ if [[ $CLOUD == "EKS" ]]; then
     $KUSTOMIZE edit add base $BASE
     $KUSTOMIZE edit add patch eksEnv.yml
     BASE=../eks
+    cd ..
+fi
+
+if $SIMULATOR; then
+    mkdir simulator && cd simulator
+    cp ../../patches/simulator/*.yml .
+    touch kustomization.yml
+    $KUSTOMIZE edit add base $BASE
+    $KUSTOMIZE edit add patch simulator.yml
+    BASE=../simulator
     cd ..
 fi
 
