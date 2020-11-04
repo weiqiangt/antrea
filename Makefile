@@ -273,6 +273,14 @@ build-ubuntu-coverage:
 	docker build -t antrea/antrea-ubuntu-coverage:$(DOCKER_IMG_VERSION) -f build/images/Dockerfile.build.coverage .
 	docker tag antrea/antrea-ubuntu-coverage:$(DOCKER_IMG_VERSION) antrea/antrea-ubuntu-coverage
 
+.PHONY: build-scale-simulator
+build-scale-simulator:
+	@echo "===> Building simulator bin and antrea-ubuntu-simulator image"
+	docker build -t harbor-repo.vmware.com/dockerhub-proxy-cache/antrea/antrea-ubuntu-simulator:$(DOCKER_IMG_VERSION) \
+	    -f build/images/Dockerfile.simulator.build.ubuntu .
+	docker tag harbor-repo.vmware.com/dockerhub-proxy-cache/antrea/antrea-ubuntu-simulator:$(DOCKER_IMG_VERSION) \
+	    harbor-repo.vmware.com/dockerhub-proxy-cache/antrea/antrea-ubuntu-simulator
+
 .PHONY: manifest
 manifest:
 	@echo "===> Generating dev manifest for Antrea <==="
@@ -286,14 +294,9 @@ manifest:
 
 .PHONY: scale-manifest
 scale-manifest:
-	@echo "===> Generating dev manifest for Antrea <==="
-	$(CURDIR)/hack/generate-manifest.sh --mode dev --simulator > build/yamls/antrea.yml
-	$(CURDIR)/hack/generate-manifest.sh --mode dev --ipsec > build/yamls/antrea-ipsec.yml
-	$(CURDIR)/hack/generate-manifest.sh --mode dev --cloud EKS --encap-mode networkPolicyOnly > build/yamls/antrea-eks.yml
-	$(CURDIR)/hack/generate-manifest.sh --mode dev --cloud GKE --encap-mode noEncap > build/yamls/antrea-gke.yml
-	$(CURDIR)/hack/generate-manifest.sh --mode dev --cloud AKS --encap-mode networkPolicyOnly > build/yamls/antrea-aks.yml
-	$(CURDIR)/hack/generate-manifest-octant.sh --mode dev > build/yamls/antrea-octant.yml
-	$(CURDIR)/hack/generate-manifest-windows.sh --mode dev > build/yamls/antrea-windows.yml
+	@echo "===> Generating simulator manifest for Antrea <==="
+	$(CURDIR)/hack/generate-manifest.sh --mode dev --simulator > build/yamls/antrea-simulator.yml
+	@cat $(CURDIR)/build/yamls/patches/simulator/antrea-agent-simulator.yml >> build/yamls/antrea-simulator.yml
 
 .PHONY: manifest-coverage
 manifest-coverage:
