@@ -37,7 +37,7 @@ Generate a YAML manifest for Antrea using Kustomize and print it to stdout.
         --on-delete                   Generate a manifest with antrea-agent's update strategy set to OnDelete.
                                       This option will work only for Kind clusters (when using '--kind').
         --coverage                    Generates a manifest which supports measuring code coverage of Antrea binaries.
-        --simulator                   Run simulator
+        --simulator                   Generates a manifest with antrea-agent simulator included
         --help, -h                    Print this message and exit
 
 In 'release' mode, environment variables IMG_NAME and IMG_TAG must be set.
