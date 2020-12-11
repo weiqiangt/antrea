@@ -276,10 +276,8 @@ build-ubuntu-coverage:
 .PHONY: build-scale-simulator
 build-scale-simulator:
 	@echo "===> Building simulator bin and antrea-ubuntu-simulator image"
-	docker build -t harbor-repo.vmware.com/dockerhub-proxy-cache/antrea/antrea-ubuntu-simulator:$(DOCKER_IMG_VERSION) \
-	    -f build/images/Dockerfile.simulator.build.ubuntu .
-	docker tag harbor-repo.vmware.com/dockerhub-proxy-cache/antrea/antrea-ubuntu-simulator:$(DOCKER_IMG_VERSION) \
-	    harbor-repo.vmware.com/dockerhub-proxy-cache/antrea/antrea-ubuntu-simulator
+	docker build -t antrea/antrea-ubuntu-simulator:$(DOCKER_IMG_VERSION) -f build/images/Dockerfile.simulator.build.ubuntu .
+	docker tag antrea/antrea-ubuntu-simulator:$(DOCKER_IMG_VERSION) antrea/antrea-ubuntu-simulator
 
 .PHONY: manifest
 manifest:
@@ -296,7 +294,6 @@ manifest:
 scale-manifest:
 	@echo "===> Generating simulator manifest for Antrea <==="
 	$(CURDIR)/hack/generate-manifest.sh --mode dev --simulator > build/yamls/antrea-simulator.yml
-	@cat $(CURDIR)/build/yamls/patches/simulator/antrea-agent-simulator.yml >> build/yamls/antrea-simulator.yml
 
 .PHONY: manifest-coverage
 manifest-coverage:

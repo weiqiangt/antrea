@@ -389,7 +389,9 @@ if [ "$MODE" == "release" ]; then
 fi
 
 $KUSTOMIZE build
-
+if $SIMULATOR; then
+    cat ../../patches/simulator/antrea-agent-simulator.yml
+fi
 popd > /dev/null
 
 if $KEEP; then
