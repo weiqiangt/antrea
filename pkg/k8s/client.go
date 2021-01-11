@@ -15,6 +15,8 @@
 package k8s
 
 import (
+	"net"
+
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -26,7 +28,7 @@ import (
 )
 
 // CreateClients creates kube clients from the given config.
-func CreateClients(config componentbaseconfig.ClientConnectionConfiguration) (clientset.Interface, aggregatorclientset.Interface, crdclientset.Interface, error) {
+func CreateClients(config componentbaseconfig.ClientConnectionConfiguration, apiHost string, apiPort string) (clientset.Interface, aggregatorclientset.Interface, crdclientset.Interface, error) {
 	var kubeConfig *rest.Config
 	var err error
 
@@ -46,6 +48,9 @@ func CreateClients(config componentbaseconfig.ClientConnectionConfiguration) (cl
 	kubeConfig.ContentType = config.ContentType
 	kubeConfig.QPS = config.QPS
 	kubeConfig.Burst = int(config.Burst)
+	if len(apiHost) > 0 && len(apiPort) > 0 {
+		kubeConfig.Host = net.JoinHostPort(apiHost, apiPort)
+	}
 
 	client, err := clientset.NewForConfig(kubeConfig)
 	if err != nil {

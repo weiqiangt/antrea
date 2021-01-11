@@ -100,7 +100,9 @@ type AgentConfig struct {
 	APIPort int `yaml:"apiPort,omitempty"`
 	// Enable metrics exposure via Prometheus. Initializes Prometheus metrics listener
 	// Defaults to true.
-	EnablePrometheusMetrics bool `yaml:"enablePrometheusMetrics,omitempty"`
+	KubernetesAPIServerHost string `yaml:"kubernetesAPIServerHost"`
+	KubernetesAPIServerPort string `yaml:"kubernetesAPIServerPort"`
+	EnablePrometheusMetrics bool   `yaml:"enablePrometheusMetrics,omitempty"`
 	// Provide the IPFIX collector address as a string with format <HOST>:[<PORT>][:<PROTO>].
 	// HOST can either be the DNS name or the IP of the Flow Collector. For example,
 	// "flow-aggregator.flow-aggregator.svc" can be provided as DNS name to connect
