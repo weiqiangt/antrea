@@ -26,6 +26,7 @@ import (
 	"k8s.io/component-base/logs"
 
 	"github.com/vmware-tanzu/antrea/pkg/antctl"
+	"github.com/vmware-tanzu/antrea/pkg/antctl/runtime"
 )
 
 var commandName = path.Base(os.Args[0])
@@ -48,7 +49,7 @@ func main() {
 	defer logs.FlushLogs()
 
 	rand.Seed(time.Now().UTC().UnixNano())
-	antctl.CommandList.ApplyToRootCommand(rootCmd)
+	antctl.CommandList.ApplyToRootCommand(runtime.SetupAntreaKubeconfig, rootCmd)
 	err := rootCmd.Execute()
 	if err != nil {
 		logs.FlushLogs()

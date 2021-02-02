@@ -24,12 +24,50 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/vmware-tanzu/antrea/pkg/antctl"
+	"github.com/vmware-tanzu/antrea/pkg/antctl/framework"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/runtime"
 )
 
 type cmdAndReturnCode struct {
 	args               []string
 	expectedReturnCode int
+}
+
+// GetDebugCommands returns all commands supported by Controller or Agent that
+// are used for debugging purpose.
+func GetDebugCommands(cl *framework.CommandList, mode string) [][]string {
+	var allCommands [][]string
+	for _, def := range cl.Definitions {
+		// TODO: incorporate query commands into e2e testing once proxy access is implemented
+		if def.CommandGroup == framework.CommandGroupQuery {
+			continue
+		}
+		if mode == runtime.ModeController && def.Use == "log-level" {
+			// log-level command does not support remote execution.
+			continue
+		}
+		if mode == runtime.ModeAgent && def.AgentEndpoint != nil ||
+			mode == runtime.ModeController && def.ControllerEndpoint != nil {
+			var currentCommand []string
+			if group, ok := framework.GroupCommands[def.CommandGroup]; ok {
+				currentCommand = append(currentCommand, group.Use)
+			}
+			currentCommand = append(currentCommand, def.Use)
+			allCommands = append(allCommands, currentCommand)
+		}
+	}
+	for _, cmd := range cl.RawCommands {
+		if cmd.CobraCommand.Use == "proxy" {
+			// proxy will keep running until interrupted so it
+			// cannot be used as is in e2e tests.
+			continue
+		}
+		if mode == runtime.ModeController && cmd.SupportController ||
+			mode == runtime.ModeAgent && cmd.SupportAgent {
+			allCommands = append(allCommands, strings.Split(cmd.CobraCommand.Use, " ")[:1])
+		}
+	}
+	return allCommands
 }
 
 // antctlOutput is a helper function for logging antctl outputs.
@@ -74,7 +112,7 @@ func TestAntctlAgentLocalAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error when getting antrea-agent pod name: %v", err)
 	}
-	for _, c := range antctl.CommandList.GetDebugCommands(runtime.ModeAgent) {
+	for _, c := range GetDebugCommands(antctl.CommandList, runtime.ModeAgent) {
 		args := []string{}
 		if testOptions.enableCoverage {
 			antctlCovArgs := antctlCoverageArgs("antctl-coverage")
@@ -144,7 +182,7 @@ func TestAntctlControllerRemoteAccess(t *testing.T) {
 
 	testCmds := []cmdAndReturnCode{}
 	// Add all controller commands.
-	for _, c := range antctl.CommandList.GetDebugCommands(runtime.ModeController) {
+	for _, c := range GetDebugCommands(antctl.CommandList, runtime.ModeController) {
 		cmd := append([]string{nodeAntctlPath, "-v"}, c...)
 		if testOptions.enableCoverage {
 			antctlCovArgs := antctlCoverageArgs(nodeAntctlPath)

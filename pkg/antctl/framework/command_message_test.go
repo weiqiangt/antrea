@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package antctl
+package framework
 
 import (
 	"net/http"
@@ -23,14 +23,14 @@ import (
 
 func TestGenerate(t *testing.T) {
 	for _, tc := range []struct {
-		cd       *commandDefinition
+		cd       *CommandDefinition
 		args     map[string]string
 		code     int
 		expected string
 	}{
 		{
-			cd: &commandDefinition{
-				use: "foo",
+			cd: &CommandDefinition{
+				Use: "foo",
 			},
 			args: map[string]string{
 				"name": "bar",
@@ -39,22 +39,22 @@ func TestGenerate(t *testing.T) {
 			expected: "NotFound: foo \"bar\" not found",
 		},
 		{
-			cd: &commandDefinition{
-				use: "foo",
+			cd: &CommandDefinition{
+				Use: "foo",
 			},
 			args:     map[string]string{},
 			code:     http.StatusInternalServerError,
 			expected: "InternalServerError: Encoding response failed for foo",
 		},
 		{
-			cd:       &commandDefinition{},
+			cd:       &CommandDefinition{},
 			args:     map[string]string{},
 			code:     http.StatusOK,
 			expected: "Unknown error",
 		},
 		{
-			cd: &commandDefinition{
-				use: "foo",
+			cd: &CommandDefinition{
+				Use: "foo",
 			},
 			args: map[string]string{
 				"name": "bar",

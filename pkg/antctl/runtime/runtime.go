@@ -15,11 +15,18 @@
 package runtime
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	agentapiserver "github.com/vmware-tanzu/antrea/pkg/agent/apiserver"
+	"github.com/vmware-tanzu/antrea/pkg/apis"
+	controllerapiserver "github.com/vmware-tanzu/antrea/pkg/apiserver"
 )
 
 const (
@@ -33,6 +40,9 @@ var (
 	InPod bool
 )
 
+// ResolveKubeconfig tries to load the kubeconfig specified.
+// It will return error if the stating of the file failed or the kubeconfig is malformed.
+// If the default kubeconfig not exists, it will try to use an in-cluster config.
 func ResolveKubeconfig(path string) (*rest.Config, error) {
 	var err error
 	if len(path) == 0 {
@@ -44,9 +54,26 @@ func ResolveKubeconfig(path string) (*rest.Config, error) {
 	}
 	if _, err = os.Stat(path); path == clientcmd.RecommendedHomeFile && os.IsNotExist(err) {
 		return rest.InClusterConfig()
-	} else {
-		return clientcmd.BuildConfigFromFlags("", path)
 	}
+	return clientcmd.BuildConfigFromFlags("", path)
+}
+
+func SetupAntreaKubeconfig(kubeconfig *rest.Config, codec serializer.CodecFactory) (*rest.Config, error) {
+	kubeconfig = rest.CopyConfig(kubeconfig)
+	kubeconfig.NegotiatedSerializer = codec
+	if InPod {
+		kubeconfig.Insecure = true
+		kubeconfig.CAFile = ""
+		kubeconfig.CAData = nil
+		if Mode == ModeAgent {
+			kubeconfig.Host = net.JoinHostPort("127.0.0.1", fmt.Sprint(apis.AntreaAgentAPIPort))
+			kubeconfig.BearerTokenFile = agentapiserver.TokenPath
+		} else if Mode == ModeController {
+			kubeconfig.Host = net.JoinHostPort("127.0.0.1", fmt.Sprint(apis.AntreaControllerAPIPort))
+			kubeconfig.BearerTokenFile = controllerapiserver.TokenPath
+		}
+	}
+	return kubeconfig, nil
 }
 
 func init() {

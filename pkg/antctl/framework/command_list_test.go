@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package antctl
+package framework
 
 import (
 	"fmt"
@@ -31,23 +31,23 @@ type testResponse struct {
 	Value uint64 `json:"value"`
 }
 
-var testCommandList = &commandList{
-	definitions: []commandDefinition{
+var testCommandList = &CommandList{
+	Definitions: []CommandDefinition{
 		{
-			use:                 "test",
-			short:               "test short description ${component}",
-			long:                "test description ${component}",
-			transformedResponse: reflect.TypeOf(testResponse{}),
+			Use:                 "test",
+			Short:               "test short description ${component}",
+			Long:                "test description ${component}",
+			TransformedResponse: reflect.TypeOf(testResponse{}),
 		},
 	},
-	codec: scheme.Codecs,
+	Codec: scheme.Codecs,
 }
 
 func TestCommandListApplyToCommand(t *testing.T) {
 	testRoot := new(cobra.Command)
 	testRoot.Short = "The component is ${component}"
 	testRoot.Long = "The component is ${component}"
-	testCommandList.ApplyToRootCommand(testRoot)
+	testCommandList.ApplyToRootCommand(runtime.SetupAntreaKubeconfig, testRoot)
 	// sub-commands should be attached
 	assert.True(t, testRoot.HasSubCommands())
 	// render should work as expected

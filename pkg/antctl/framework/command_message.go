@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package antctl
+package framework
 
 import (
 	"fmt"
@@ -31,14 +31,14 @@ func generateMessage(opt *requestOption, result rest.Result) error {
 	return result.Error()
 }
 
-func generateMessageForStatusErr(cd *commandDefinition, args map[string]string, statusErr *errors.StatusError) error {
+func generateMessageForStatusErr(cd *CommandDefinition, args map[string]string, statusErr *errors.StatusError) error {
 	if statusErr.ErrStatus.Details.Causes == nil || len(statusErr.ErrStatus.Details.Causes[0].Message) == 0 {
 		return generate(cd, args, int(statusErr.ErrStatus.Code), statusErr.Error())
 	}
 	return fmt.Errorf("%s: %s", statusErr.ErrStatus.Reason, statusErr.ErrStatus.Details.Causes[0].Message)
 }
 
-func generate(cd *commandDefinition, args map[string]string, code int, err string) error {
+func generate(cd *CommandDefinition, args map[string]string, code int, err string) error {
 	if len(err) > 0 {
 		if len(http.StatusText(code)) == 0 {
 			return fmt.Errorf("%s", err)
@@ -47,11 +47,11 @@ func generate(cd *commandDefinition, args map[string]string, code int, err strin
 	}
 	switch code {
 	case http.StatusNotFound:
-		return fmt.Errorf("NotFound: %s \"%s\" not found", cd.use, args["name"])
+		return fmt.Errorf("NotFound: %s \"%s\" not found", cd.Use, args["name"])
 	case http.StatusInternalServerError:
-		return fmt.Errorf("InternalServerError: Encoding response failed for %s", cd.use)
+		return fmt.Errorf("InternalServerError: Encoding response failed for %s", cd.Use)
 	case http.StatusBadRequest:
-		return fmt.Errorf("BadRequest: Please check the args for %s", cd.use)
+		return fmt.Errorf("BadRequest: Please check the args for %s", cd.Use)
 	default:
 		return fmt.Errorf("Unknown error")
 	}

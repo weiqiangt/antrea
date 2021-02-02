@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package antctl
+package framework
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/url"
 	"time"
 
@@ -28,15 +27,12 @@ import (
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/client-go/rest"
 
-	agentapiserver "github.com/vmware-tanzu/antrea/pkg/agent/apiserver"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/runtime"
-	"github.com/vmware-tanzu/antrea/pkg/apis"
-	controllerapiserver "github.com/vmware-tanzu/antrea/pkg/apiserver"
 )
 
 // requestOption describes options to issue requests.
 type requestOption struct {
-	commandDefinition *commandDefinition
+	commandDefinition *CommandDefinition
 	// kubeconfig is the path to the config file for kubectl.
 	kubeconfig string
 	// args are the parameters of the ongoing resourceRequest.
@@ -52,54 +48,38 @@ type requestOption struct {
 	server string
 }
 
+type configWrapperType func(kubeconfig *rest.Config, codec serializer.CodecFactory) (*rest.Config, error)
+
 // client issues requests to endpoints.
 type client struct {
+	configWrapper configWrapperType
 	// codec is the CodecFactory for this command, it is needed for remote accessing.
 	codec serializer.CodecFactory
 }
 
-// resolveKubeconfig tries to load the kubeconfig specified in the requestOption.
-// It will return error if the stating of the file failed or the kubeconfig is malformed.
-// If the default kubeconfig not exists, it will try to use an in-cluster config.
-func (c *client) resolveKubeconfig(opt *requestOption) (*rest.Config, error) {
+func (c *client) request(opt *requestOption) (io.Reader, error) {
+	var e *CommandEndpoint
+	if runtime.Mode == runtime.ModeAgent {
+		e = opt.commandDefinition.AgentEndpoint
+	} else {
+		e = opt.commandDefinition.ControllerEndpoint
+	}
+	if e.ResourceEndpoint != nil {
+		return c.resourceRequest(e.ResourceEndpoint, opt)
+	}
+	return c.nonResourceRequest(e.NonResourceEndpoint, opt)
+}
+
+func (c *client) nonResourceRequest(e *NonResourceCommandEndpoint, opt *requestOption) (io.Reader, error) {
 	kubeconfig, err := runtime.ResolveKubeconfig(opt.kubeconfig)
 	if err != nil {
 		return nil, err
 	}
-	kubeconfig.NegotiatedSerializer = c.codec
-	if runtime.InPod {
-		kubeconfig.Insecure = true
-		kubeconfig.CAFile = ""
-		kubeconfig.CAData = nil
-		if runtime.Mode == runtime.ModeAgent {
-			kubeconfig.Host = net.JoinHostPort("127.0.0.1", fmt.Sprint(apis.AntreaAgentAPIPort))
-			kubeconfig.BearerTokenFile = agentapiserver.TokenPath
-		} else if runtime.Mode == runtime.ModeController {
-			kubeconfig.Host = net.JoinHostPort("127.0.0.1", fmt.Sprint(apis.AntreaControllerAPIPort))
-			kubeconfig.BearerTokenFile = controllerapiserver.TokenPath
-		}
-	}
-	return kubeconfig, nil
-}
-
-func (c *client) request(opt *requestOption) (io.Reader, error) {
-	var e *endpoint
-	if runtime.Mode == runtime.ModeAgent {
-		e = opt.commandDefinition.agentEndpoint
-	} else {
-		e = opt.commandDefinition.controllerEndpoint
-	}
-	if e.resourceEndpoint != nil {
-		return c.resourceRequest(e.resourceEndpoint, opt)
-	}
-	return c.nonResourceRequest(e.nonResourceEndpoint, opt)
-}
-
-func (c *client) nonResourceRequest(e *nonResourceEndpoint, opt *requestOption) (io.Reader, error) {
-	kubeconfig, err := c.resolveKubeconfig(opt)
+	kubeconfig, err = c.configWrapper(kubeconfig, c.codec)
 	if err != nil {
 		return nil, err
 	}
+
 	if opt.server != "" {
 		kubeconfig.Host = opt.server
 	}
@@ -107,7 +87,7 @@ func (c *client) nonResourceRequest(e *nonResourceEndpoint, opt *requestOption) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create rest client: %w", err)
 	}
-	u := url.URL{Path: e.path}
+	u := url.URL{Path: e.Path}
 	q := u.Query()
 	for k, v := range opt.args {
 		q.Set(k, v)
@@ -125,15 +105,19 @@ func (c *client) nonResourceRequest(e *nonResourceEndpoint, opt *requestOption) 
 	return bytes.NewReader(result), nil
 }
 
-func (c *client) resourceRequest(e *resourceEndpoint, opt *requestOption) (io.Reader, error) {
-	kubeconfig, err := c.resolveKubeconfig(opt)
+func (c *client) resourceRequest(e *ResourceEndpoint, opt *requestOption) (io.Reader, error) {
+	kubeconfig, err := runtime.ResolveKubeconfig(opt.kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+	kubeconfig, err = c.configWrapper(kubeconfig, c.codec)
 	if err != nil {
 		return nil, err
 	}
 	if opt.server != "" {
 		kubeconfig.Host = opt.server
 	}
-	gv := e.groupVersionResource.GroupVersion()
+	gv := e.GroupVersionResource.GroupVersion()
 	kubeconfig.GroupVersion = &gv
 	kubeconfig.APIPath = genericapiserver.APIGroupPrefix
 
@@ -145,11 +129,11 @@ func (c *client) resourceRequest(e *resourceEndpoint, opt *requestOption) (io.Re
 	restClient.Client.Timeout = opt.timeout
 
 	resGetter := restClient.Get().
-		NamespaceIfScoped(opt.args["namespace"], e.namespaced).
-		Resource(e.groupVersionResource.Resource)
+		NamespaceIfScoped(opt.args["namespace"], e.Namespaced).
+		Resource(e.GroupVersionResource.Resource)
 
-	if len(e.resourceName) != 0 {
-		resGetter = resGetter.Name(e.resourceName)
+	if len(e.ResourceName) != 0 {
+		resGetter = resGetter.Name(e.ResourceName)
 	} else if name, ok := opt.args["name"]; ok {
 		resGetter = resGetter.Name(name)
 	}

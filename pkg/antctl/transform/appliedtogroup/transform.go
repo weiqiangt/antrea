@@ -20,12 +20,13 @@ import (
 
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform"
 	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/common"
+	"github.com/vmware-tanzu/antrea/pkg/antctl/transform/groupmember"
 	cpv1beta "github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2"
 )
 
 type Response struct {
 	Name string               `json:"name" yaml:"name"`
-	Pods []common.GroupMember `json:"pods,omitempty"`
+	Pods []groupmember.Response `json:"pods,omitempty"`
 }
 
 func listTransform(l interface{}, opts map[string]string) (interface{}, error) {
@@ -41,9 +42,9 @@ func listTransform(l interface{}, opts map[string]string) (interface{}, error) {
 
 func objectTransform(o interface{}, _ map[string]string) (interface{}, error) {
 	group := o.(*cpv1beta.AppliedToGroup)
-	var pods []common.GroupMember
+	var pods []groupmember.Response
 	for _, pod := range group.GroupMembers {
-		pods = append(pods, common.GroupMemberPodTransform(pod))
+		pods = append(pods, groupmember.ObjectToResponse(pod))
 	}
 	return Response{Name: group.GetName(), Pods: pods}, nil
 }

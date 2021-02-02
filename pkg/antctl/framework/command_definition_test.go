@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package antctl
+package framework
 
 import (
 	"bytes"
@@ -47,7 +47,7 @@ type Foobar struct {
 
 var (
 	AntreaPolicyTierPriority = int32(250)
-	AntreaPolicyPriority     = float64(1.0)
+	AntreaPolicyPriority     = 1.0
 )
 
 func TestCommandList_tableOutputForGetCommands(t *testing.T) {
@@ -57,7 +57,7 @@ func TestCommandList_tableOutputForGetCommands(t *testing.T) {
 		expected        string
 	}{
 		{
-			name: "StructureData-ControllerInfo-Single",
+			name: "StructureData-ControllerInfo-OutputTypeSingle",
 			rawResponseData: controllerinfo.Response{
 				Version: "v0.4.0",
 				PodRef: v1.ObjectReference{
@@ -92,7 +92,7 @@ kube-system/antrea-controller-55b9bcd59f-h9ll4 node-control-plane Healthy 1     
 `,
 		},
 		{
-			name: "StructureData-AgentInfo-Single",
+			name: "StructureData-AgentInfo-OutputTypeSingle",
 			rawResponseData: agentinfo.AntreaAgentInfoResponse{
 				Version: "v0.4.0",
 				PodRef: v1.ObjectReference{
@@ -132,7 +132,7 @@ kube-system/antrea-agent-0 node-worker Healthy 192.168.1.0/24,192.168.1.1/24 1  
 `,
 		},
 		{
-			name:            "StructureData-NonTableOutput-Single",
+			name:            "StructureData-NonTableOutput-OutputTypeSingle",
 			rawResponseData: Foobar{Foo: "foo"},
 			expected: `foo            
 foo            
@@ -225,7 +225,7 @@ GroupName2 <NONE>
 `,
 		},
 		{
-			name: "StructureData-AppliedToGroup-Single-NoSummary",
+			name: "StructureData-AppliedToGroup-OutputTypeSingle-NoSummary",
 			rawResponseData: appliedtogroup.Response{
 				Name: "GroupName",
 				Pods: []common.GroupMember{
@@ -249,7 +249,7 @@ GroupName PodNamespace/nginx-6db489d4b7-324rc + 1 more...
 			expected:        "\n",
 		},
 		{
-			name: "StructureData-AppliedToGroup-Single-EmptyRespCase",
+			name: "StructureData-AppliedToGroup-OutputTypeSingle-EmptyRespCase",
 			rawResponseData: appliedtogroup.Response{
 				Name: "GroupName",
 				Pods: []common.GroupMember{},
@@ -289,7 +289,7 @@ default   nginx-6db489d4b7-vgv7v Interface      127.0.0.1 07-16-76-00-02-86 port
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			opt := &commandDefinition{}
+			opt := &CommandDefinition{}
 			var outputBuf bytes.Buffer
 			err := opt.tableOutputForGetCommands(tc.rawResponseData, &outputBuf)
 			fmt.Println(outputBuf.String())
@@ -308,25 +308,25 @@ func TestFormat(t *testing.T) {
 		rawResponseData interface{}
 		responseStruct  reflect.Type
 		expected        string
-		formatter       formatterType
+		formatter       FormatterType
 	}{
 		{
 			name:            "StructureData-NoTransform-List-Yaml",
 			rawResponseData: []Foobar{{Foo: "foo"}},
 			responseStruct:  reflect.TypeOf(Foobar{}),
 			expected:        "- foo: foo\n",
-			formatter:       yamlFormatter,
+			formatter:       YamlFormatter,
 		},
 		{
-			name:            "StructureData-NoTransform-Single-Yaml",
+			name:            "StructureData-NoTransform-OutputTypeSingle-Yaml",
 			single:          true,
 			rawResponseData: &Foobar{Foo: "foo"},
 			responseStruct:  reflect.TypeOf(Foobar{}),
 			expected:        "foo: foo\n",
-			formatter:       yamlFormatter,
+			formatter:       YamlFormatter,
 		},
 		{
-			name:   "StructureData-Transform-Single-Yaml",
+			name:   "StructureData-Transform-OutputTypeSingle-Yaml",
 			single: true,
 			transform: func(reader io.Reader, single bool, opts map[string]string) (i interface{}, err error) {
 				foo := &Foobar{}
@@ -336,28 +336,28 @@ func TestFormat(t *testing.T) {
 			rawResponseData: &Foobar{Foo: "foo"},
 			responseStruct:  reflect.TypeOf(struct{ Bar string }{}),
 			expected:        "Bar: foo\n",
-			formatter:       yamlFormatter,
+			formatter:       YamlFormatter,
 		},
 		{
 			name:            "StructureData-NoTransform-List-Table",
 			rawResponseData: []Foobar{{Foo: "foo"}, {Foo: "bar"}},
 			responseStruct:  reflect.TypeOf(Foobar{}),
 			expected:        "foo            \nfoo            \nbar            \n",
-			formatter:       tableFormatter,
+			formatter:       TableFormatter,
 		},
 		{
 			name:            "StructureData-NoTransform-List-Table-Struct",
 			rawResponseData: []struct{ Foo Foobar }{{Foo: Foobar{"foo"}}, {Foo: Foobar{"bar"}}},
 			responseStruct:  reflect.TypeOf(struct{ Foo Foobar }{}),
 			expected:        "Foo            \n{\"foo\":\"foo\"}  \n{\"foo\":\"bar\"}  \n",
-			formatter:       tableFormatter,
+			formatter:       TableFormatter,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			opt := &commandDefinition{
-				transformedResponse: tc.responseStruct,
-				controllerEndpoint:  &endpoint{addonTransform: tc.transform},
-				agentEndpoint:       &endpoint{addonTransform: tc.transform},
+			opt := &CommandDefinition{
+				TransformedResponse: tc.responseStruct,
+				ControllerEndpoint:  &CommandEndpoint{AddonTransform: tc.transform},
+				AgentEndpoint:       &CommandEndpoint{AddonTransform: tc.transform},
 			}
 			var responseData []byte
 			responseData, err := json.Marshal(tc.rawResponseData)
@@ -383,7 +383,7 @@ func TestCommandDefinitionGenerateExample(t *testing.T) {
 		"SingleObject": {
 			use:        "test",
 			cmdChain:   "first second third",
-			outputType: single,
+			outputType: OutputTypeSingle,
 			expect:     "  Get the test\n  $ first second third test\n",
 		},
 		"KeyList": {
@@ -402,9 +402,9 @@ func TestCommandDefinitionGenerateExample(t *testing.T) {
 			}
 			cmd.Use = tc.use
 
-			co := &commandDefinition{
-				use:           tc.use,
-				agentEndpoint: &endpoint{nonResourceEndpoint: &nonResourceEndpoint{outputType: tc.outputType}},
+			co := &CommandDefinition{
+				Use:           tc.use,
+				AgentEndpoint: &CommandEndpoint{NonResourceEndpoint: &NonResourceCommandEndpoint{OutputType: tc.outputType}},
 			}
 			co.applyExampleToCommand(cmd)
 			assert.Equal(t, tc.expect, cmd.Example)

@@ -16,31 +16,10 @@ package common
 
 import (
 	"fmt"
-	"net"
 	"sort"
 	"strconv"
-
-	cpv1beta "github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2"
 )
 
-type GroupMember struct {
-	Pod *cpv1beta.PodReference `json:"pod,omitempty"`
-	// IP maintains the IPAddresses associated with the Pod.
-	IP string `json:"ip,omitempty"`
-	// Ports maintain the named port mapping of this Pod.
-	Ports []cpv1beta.NamedPort `json:"ports,omitempty"`
-}
-
-func GroupMemberPodTransform(member cpv1beta.GroupMember) GroupMember {
-	var ipStr string
-	for i, ip := range member.IPs {
-		if i != 0 {
-			ipStr += ", "
-		}
-		ipStr += net.IP(ip).String()
-	}
-	return GroupMember{Pod: member.Pod, IP: ipStr, Ports: member.Ports}
-}
 
 type TableOutput interface {
 	GetTableHeader() []string

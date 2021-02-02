@@ -22,6 +22,6 @@ import (
 
 // TestCommandListValidation ensures the command list is valid.
 func TestCommandListValidation(t *testing.T) {
-	errs := CommandList.validate()
+	errs := CommandList.Validate()
 	assert.Len(t, errs, 0)
 }
