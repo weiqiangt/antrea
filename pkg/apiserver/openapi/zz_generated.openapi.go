@@ -65,10 +65,11 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.AppliedToGroup":                    schema_pkg_apis_controlplane_v1beta2_AppliedToGroup(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.AppliedToGroupList":                schema_pkg_apis_controlplane_v1beta2_AppliedToGroupList(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.AppliedToGroupPatch":               schema_pkg_apis_controlplane_v1beta2_AppliedToGroupPatch(ref),
+		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.ClusterGroupMembers":               schema_pkg_apis_controlplane_v1beta2_ClusterGroupMembers(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.ExternalEntityReference":           schema_pkg_apis_controlplane_v1beta2_ExternalEntityReference(ref),
-		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.Group":                             schema_pkg_apis_controlplane_v1beta2_Group(ref),
-		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.GroupList":                         schema_pkg_apis_controlplane_v1beta2_GroupList(ref),
+		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.GroupAssociation":                  schema_pkg_apis_controlplane_v1beta2_GroupAssociation(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.GroupMember":                       schema_pkg_apis_controlplane_v1beta2_GroupMember(ref),
+		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.GroupReference":                    schema_pkg_apis_controlplane_v1beta2_GroupReference(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.IPBlock":                           schema_pkg_apis_controlplane_v1beta2_IPBlock(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.IPNet":                             schema_pkg_apis_controlplane_v1beta2_IPNet(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.NamedPort":                         schema_pkg_apis_controlplane_v1beta2_NamedPort(ref),
@@ -83,6 +84,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.NodeStatsSummary":                  schema_pkg_apis_controlplane_v1beta2_NodeStatsSummary(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.PodReference":                      schema_pkg_apis_controlplane_v1beta2_PodReference(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.Service":                           schema_pkg_apis_controlplane_v1beta2_Service(ref),
+		"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.ServiceReference":                  schema_pkg_apis_controlplane_v1beta2_ServiceReference(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/stats/v1alpha1.AntreaClusterNetworkPolicyStats":         schema_pkg_apis_stats_v1alpha1_AntreaClusterNetworkPolicyStats(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/stats/v1alpha1.AntreaClusterNetworkPolicyStatsList":     schema_pkg_apis_stats_v1alpha1_AntreaClusterNetworkPolicyStatsList(ref),
 		"github.com/vmware-tanzu/antrea/pkg/apis/stats/v1alpha1.AntreaNetworkPolicyStats":                schema_pkg_apis_stats_v1alpha1_AntreaNetworkPolicyStats(ref),
@@ -2148,38 +2150,11 @@ func schema_pkg_apis_controlplane_v1beta2_AppliedToGroupPatch(ref common.Referen
 	}
 }
 
-func schema_pkg_apis_controlplane_v1beta2_ExternalEntityReference(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_pkg_apis_controlplane_v1beta2_ClusterGroupMembers(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "ExternalEntityReference represents a ExternalEntity Reference.",
-				Type:        []string{"object"},
-				Properties: map[string]spec.Schema{
-					"name": {
-						SchemaProps: spec.SchemaProps{
-							Description: "The name of this ExternalEntity.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-					"namespace": {
-						SchemaProps: spec.SchemaProps{
-							Description: "The namespace of this ExternalEntity.",
-							Type:        []string{"string"},
-							Format:      "",
-						},
-					},
-				},
-			},
-		},
-	}
-}
-
-func schema_pkg_apis_controlplane_v1beta2_Group(ref common.ReferenceCallback) common.OpenAPIDefinition {
-	return common.OpenAPIDefinition{
-		Schema: spec.Schema{
-			SchemaProps: spec.SchemaProps{
-				Description: "Group is the message format of antrea/pkg/controller/types.Group in an API response. An internal Group is created corresponding to a ClusterGroup resource, i.e. it is a 1:1 mapping. The UID of this Group is the same as that of it's corresponding ClusterGroup.",
+				Description: "ClusterGroupMembers is a list of GroupMember objects that are currently selected by a ClusterGroup.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -2201,10 +2176,9 @@ func schema_pkg_apis_controlplane_v1beta2_Group(ref common.ReferenceCallback) co
 							Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"),
 						},
 					},
-					"groupMembers": {
+					"effectiveMembers": {
 						SchemaProps: spec.SchemaProps{
-							Description: "\n GroupMembers is a list of resources selected by this Group based on the selectors\n\tpresent in the corresponding ClusterGroup.",
-							Type:        []string{"array"},
+							Type: []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
@@ -2215,6 +2189,7 @@ func schema_pkg_apis_controlplane_v1beta2_Group(ref common.ReferenceCallback) co
 						},
 					},
 				},
+				Required: []string{"effectiveMembers"},
 			},
 		},
 		Dependencies: []string{
@@ -2222,11 +2197,38 @@ func schema_pkg_apis_controlplane_v1beta2_Group(ref common.ReferenceCallback) co
 	}
 }
 
-func schema_pkg_apis_controlplane_v1beta2_GroupList(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_pkg_apis_controlplane_v1beta2_ExternalEntityReference(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "GroupList is a list of Group objects.",
+				Description: "ExternalEntityReference represents a ExternalEntity Reference.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The name of this ExternalEntity.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"namespace": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The Namespace of this ExternalEntity.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func schema_pkg_apis_controlplane_v1beta2_GroupAssociation(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "GroupAssociation is the message format in an API response for groupassociation queries.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"kind": {
@@ -2245,27 +2247,28 @@ func schema_pkg_apis_controlplane_v1beta2_GroupList(ref common.ReferenceCallback
 					},
 					"metadata": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"),
+							Ref: ref("k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"),
 						},
 					},
-					"items": {
+					"associatedGroups": {
 						SchemaProps: spec.SchemaProps{
-							Type: []string{"array"},
+							Description: "AssociatedGroups is a list of GroupReferences that is associated with the Pod/ExternalEntity being queried.",
+							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Ref: ref("github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.Group"),
+										Ref: ref("github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.GroupReference"),
 									},
 								},
 							},
 						},
 					},
 				},
-				Required: []string{"items"},
+				Required: []string{"associatedGroups"},
 			},
 		},
 		Dependencies: []string{
-			"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.Group", "k8s.io/apimachinery/pkg/apis/meta/v1.ListMeta"},
+			"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.GroupReference", "k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta"},
 	}
 }
 
@@ -2273,7 +2276,7 @@ func schema_pkg_apis_controlplane_v1beta2_GroupMember(ref common.ReferenceCallba
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "GroupMember represents resource member to be populated in Groups. This supersedes GroupMemberPod, and will eventually replace it.",
+				Description: "GroupMember represents resource member to be populated in Groups.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"pod": {
@@ -2320,6 +2323,39 @@ func schema_pkg_apis_controlplane_v1beta2_GroupMember(ref common.ReferenceCallba
 		},
 		Dependencies: []string{
 			"github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.ExternalEntityReference", "github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.NamedPort", "github.com/vmware-tanzu/antrea/pkg/apis/controlplane/v1beta2.PodReference"},
+	}
+}
+
+func schema_pkg_apis_controlplane_v1beta2_GroupReference(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"namespace": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Namespace of the Group. Empty for ClusterGroup.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Name of the Group.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"uid": {
+						SchemaProps: spec.SchemaProps{
+							Description: "UID of the Group.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+			},
+		},
 	}
 }
 
@@ -2893,14 +2929,14 @@ func schema_pkg_apis_controlplane_v1beta2_PodReference(ref common.ReferenceCallb
 				Properties: map[string]spec.Schema{
 					"name": {
 						SchemaProps: spec.SchemaProps{
-							Description: "The name of this pod.",
+							Description: "The name of this Pod.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 					"namespace": {
 						SchemaProps: spec.SchemaProps{
-							Description: "The namespace of this pod.",
+							Description: "The Namespace of this Pod.",
 							Type:        []string{"string"},
 							Format:      "",
 						},
@@ -2943,6 +2979,33 @@ func schema_pkg_apis_controlplane_v1beta2_Service(ref common.ReferenceCallback) 
 		},
 		Dependencies: []string{
 			"k8s.io/apimachinery/pkg/util/intstr.IntOrString"},
+	}
+}
+
+func schema_pkg_apis_controlplane_v1beta2_ServiceReference(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ServiceReference represents reference to a v1.Service.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The name of this Service.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"namespace": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The Namespace of this Service.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+			},
+		},
 	}
 }
 

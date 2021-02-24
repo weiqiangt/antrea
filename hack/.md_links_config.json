@@ -11,6 +11,12 @@
         },
         {
             "pattern": "^/pkg/*"
+        },
+        {
+            "pattern": "^https://calendar.google.com/*"
+        },
+        {
+             "pattern": "^https://github.com/[^/]*$"
         }
     ],
     "retryOn429": false,

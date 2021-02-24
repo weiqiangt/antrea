@@ -52,7 +52,9 @@ func (n *NetworkPolicySpecBuilder) SetName(namespace string, name string) *Netwo
 }
 
 // TODO: Add tests to match expressions
-func (n *NetworkPolicySpecBuilder) AddIngress(protoc v1.Protocol, port *int, portName *string, cidr *string, exceptCIDRs []string, podSelector map[string]string, nsSelector map[string]string, podSelectorMatchExp *[]metav1.LabelSelectorRequirement, nsSelectorMatchExp *[]metav1.LabelSelectorRequirement) *NetworkPolicySpecBuilder {
+func (n *NetworkPolicySpecBuilder) AddIngress(protoc v1.Protocol, port *int32, portName *string, cidr *string, exceptCIDRs []string,
+	podSelector map[string]string, nsSelector map[string]string,
+	podSelectorMatchExp []metav1.LabelSelectorRequirement, nsSelectorMatchExp []metav1.LabelSelectorRequirement) *NetworkPolicySpecBuilder {
 
 	var ps *metav1.LabelSelector
 	var ns *metav1.LabelSelector
@@ -65,13 +67,13 @@ func (n *NetworkPolicySpecBuilder) AddIngress(protoc v1.Protocol, port *int, por
 			MatchLabels: podSelector,
 		}
 		if podSelectorMatchExp != nil {
-			ps.MatchExpressions = *podSelectorMatchExp
+			ps.MatchExpressions = podSelectorMatchExp
 		}
 	}
 
 	if podSelectorMatchExp != nil {
 		ps = &metav1.LabelSelector{
-			MatchExpressions: *podSelectorMatchExp,
+			MatchExpressions: podSelectorMatchExp,
 		}
 	}
 
@@ -80,13 +82,13 @@ func (n *NetworkPolicySpecBuilder) AddIngress(protoc v1.Protocol, port *int, por
 			MatchLabels: nsSelector,
 		}
 		if nsSelectorMatchExp != nil {
-			ns.MatchExpressions = *nsSelectorMatchExp
+			ns.MatchExpressions = nsSelectorMatchExp
 		}
 	}
 
 	if nsSelectorMatchExp != nil {
 		ns = &metav1.LabelSelector{
-			MatchExpressions: *nsSelectorMatchExp,
+			MatchExpressions: nsSelectorMatchExp,
 		}
 	}
 
@@ -114,7 +116,7 @@ func (n *NetworkPolicySpecBuilder) AddIngress(protoc v1.Protocol, port *int, por
 	if port != nil {
 		ports = []networkingv1.NetworkPolicyPort{
 			{
-				Port:     &intstr.IntOrString{IntVal: int32(*port)},
+				Port:     &intstr.IntOrString{IntVal: *port},
 				Protocol: &protoc,
 			},
 		}
@@ -150,7 +152,10 @@ func (n *NetworkPolicySpecBuilder) WithEgressDNS() *NetworkPolicySpecBuilder {
 	return n
 }
 
-func (n *NetworkPolicySpecBuilder) AddEgress(protoc v1.Protocol, port *int, portName *string, cidr *string, exceptCIDRs []string, podSelector map[string]string, nsSelector map[string]string, podSelectorMatchExp *[]metav1.LabelSelectorRequirement, nsSelectorMatchExp *[]metav1.LabelSelectorRequirement) *NetworkPolicySpecBuilder {
+func (n *NetworkPolicySpecBuilder) AddEgress(protoc v1.Protocol, port *int32, portName *string, cidr *string, exceptCIDRs []string,
+	podSelector map[string]string, nsSelector map[string]string,
+	podSelectorMatchExp []metav1.LabelSelectorRequirement, nsSelectorMatchExp []metav1.LabelSelectorRequirement) *NetworkPolicySpecBuilder {
+
 	// For simplicity, we just reuse the Ingress code here.  The underlying data model for ingress/egress is identical
 	// With the exception of calling the rule `To` vs. `From`.
 	i := &NetworkPolicySpecBuilder{}

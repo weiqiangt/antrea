@@ -33,12 +33,21 @@ const (
 	// Allows to apply ClusterNetworkPolicy and AntreaNetworkPolicy CRDs.
 	AntreaPolicy featuregate.Feature = "AntreaPolicy"
 
+	// alpha: v0.13
+	// Enable EndpointSlice support in AntreaProxy. If AntreaProxy is not enabled, this
+	// flag will not take effect.
+	EndpointSlice featuregate.Feature = "EndpointSlice"
+
 	// alpha: v0.8
 	// beta: v0.11
 	// Enable antrea proxy which provides ServiceLB for in-cluster services in antrea agent.
 	// It should be enabled on Windows, otherwise NetworkPolicy will not take effect on
 	// Service traffic.
 	AntreaProxy featuregate.Feature = "AntreaProxy"
+
+	// alpha: v0.14
+	// Enable NodePort Service support in AntreaProxy in antrea-agent.
+	AntreaProxyNodePort featuregate.Feature = "AntreaProxyNodePort"
 
 	// alpha: v0.8
 	// beta: v0.11
@@ -70,12 +79,14 @@ var (
 	// To add a new feature, define a key for it above and add it here. The features will be
 	// available throughout Antrea binaries.
 	defaultAntreaFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-		AntreaPolicy:       {Default: false, PreRelease: featuregate.Alpha},
-		AntreaProxy:        {Default: true, PreRelease: featuregate.Beta},
-		Traceflow:          {Default: true, PreRelease: featuregate.Beta},
-		FlowExporter:       {Default: false, PreRelease: featuregate.Alpha},
-		NetworkPolicyStats: {Default: false, PreRelease: featuregate.Alpha},
-		NodePortLocal:      {Default: false, PreRelease: featuregate.Alpha},
+		AntreaPolicy:        {Default: false, PreRelease: featuregate.Alpha},
+		AntreaProxy:         {Default: true, PreRelease: featuregate.Beta},
+		EndpointSlice:       {Default: false, PreRelease: featuregate.Alpha},
+		AntreaProxyNodePort: {Default: false, PreRelease: featuregate.Alpha},
+		Traceflow:           {Default: true, PreRelease: featuregate.Beta},
+		FlowExporter:        {Default: false, PreRelease: featuregate.Alpha},
+		NetworkPolicyStats:  {Default: false, PreRelease: featuregate.Alpha},
+		NodePortLocal:       {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	// UnsupportedFeaturesOnWindows records the features not supported on
@@ -89,7 +100,8 @@ var (
 	// can have different FeatureSpecs between Linux and Windows, we should
 	// still define a separate defaultAntreaFeatureGates map for Windows.
 	unsupportedFeaturesOnWindows = map[featuregate.Feature]struct{}{
-		NodePortLocal: {},
+		AntreaProxyNodePort: {},
+		NodePortLocal:       {},
 	}
 )
 

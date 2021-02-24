@@ -16,6 +16,7 @@ package e2e
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -95,7 +96,7 @@ func TestPodConnectivitySameNode(t *testing.T) {
 func (data *TestData) testHostPortPodConnectivity(t *testing.T) {
 	// Create a server Pod with hostPort set to 80.
 	hpPodName := randName("test-host-port-pod-")
-	hpPodPort := 80
+	hpPodPort := int32(80)
 	if err := data.createServerPod(hpPodName, "", hpPodPort, true); err != nil {
 		t.Fatalf("Error when creating HostPort server Pod: %v", err)
 	}
@@ -119,7 +120,7 @@ func (data *TestData) testHostPortPodConnectivity(t *testing.T) {
 	}
 
 	if err = data.runNetcatCommandFromTestPod(clientName, hpPodHostIP, hpPodPort); err != nil {
-		t.Fatalf("Pod %s should be able to connect %s:%d, but was not able to connect", clientName, hpPodHostIP, hpPodPort)
+		t.Fatalf("Pod %s should be able to connect %s, but was not able to connect", clientName, net.JoinHostPort(hpPodHostIP, fmt.Sprint(hpPodPort)))
 	}
 }
 

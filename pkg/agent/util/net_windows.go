@@ -26,8 +26,8 @@ import (
 
 	"github.com/Microsoft/go-winio"
 	"github.com/Microsoft/hcsshim"
-	ps "github.com/benmoss/go-powershell"
-	"github.com/benmoss/go-powershell/backend"
+	ps "github.com/antoninbas/go-powershell"
+	"github.com/antoninbas/go-powershell/backend"
 	"github.com/containernetworking/plugins/pkg/ip"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
@@ -396,4 +396,19 @@ func DialLocalSocket(address string) (net.Conn, error) {
 		return winio.DialPipe(address, nil)
 	}
 	return dialUnix(address)
+}
+
+func HostInterfaceExists(ifaceName string) bool {
+	if _, err := net.InterfaceByName(ifaceName); err == nil {
+		return true
+	}
+	// Some kinds of interfaces cannot be retrieved by "net.InterfaceByName" such as
+	// container vnic.
+	// So if a interface cannot be found by above function, use powershell command
+	// "Get-NetAdapter" to check if it exists.
+	cmd := fmt.Sprintf(`Get-NetAdapter -InterfaceAlias "%s"`, ifaceName)
+	if err := InvokePSCommand(cmd); err != nil {
+		return false
+	}
+	return true
 }

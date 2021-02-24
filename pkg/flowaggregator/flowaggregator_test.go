@@ -53,6 +53,9 @@ func TestFlowAggregator_sendTemplateSet(t *testing.T) {
 		mockIPFIXExpProc,
 		testTemplateID,
 		mockIPFIXRegistry,
+		ipfixtest.NewMockIPFIXSet(ctrl),
+		"",
+		nil,
 	}
 
 	// Following consists of all elements that are in ianaInfoElements and antreaInfoElements (globals)

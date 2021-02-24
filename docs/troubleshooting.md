@@ -16,6 +16,7 @@
 - [Troubleshooting Open vSwitch](#troubleshooting-open-vswitch)
 - [Troubleshooting with antctl](#troubleshooting-with-antctl)
 - [Profiling Antrea components](#profiling-antrea-components)
+- [Ask your questions to the Antrea community](#ask-your-questions-to-the-antrea-community)
 <!-- /toc -->
 
 ## Looking at the Antrea logs
@@ -119,9 +120,9 @@ If you want to directly access the antrea-controller API, you need to get its
 address and pass an authentication token when accessing it, like this:
 
 ```bash
-# Get the antrea service address
+# Get the antrea Service address
 ANTREA_SVC=$(kubectl get service antrea -n kube-system -o jsonpath='{.spec.clusterIP}')
-# Get the token value of antctl account, you can use any service accounts that have permissions to antrea API.
+# Get the token value of antctl account, you can use any ServiceAccount that has permissions to antrea API.
 TOKEN=$(kubectl get secrets -n kube-system -o jsonpath="{.items[?(@.metadata.annotations['kubernetes\.io/service-account\.name']=='antctl')].data.token}"|base64 --decode)
 # Access antrea API with TOKEN
 curl --insecure --header "Authorization: Bearer $TOKEN" https://$ANTREA_SVC/apis
@@ -168,7 +169,7 @@ curl --insecure --header "Authorization: Bearer $TOKEN" https://127.0.0.1:10350/
 ```
 
 Note that you can also access the antrea-agent API from outside the Node by
-using the authentication token of the `antctl` service account:
+using the authentication token of the `antctl` ServiceAccount:
 
 ```bash
 # Get the token value of antctl account.
@@ -257,3 +258,10 @@ antctl proxy --controller&
 # Look at a 30-second CPU profile
 go tool pprof http://127.0.0.1:8001/debug/pprof/profile?seconds=30
 ```
+
+## Ask your questions to the Antrea community
+
+If you are running into issues when running Antrea and you need help, ask your
+questions on [Github](https://github.com/vmware-tanzu/antrea/issues/new/choose)
+or [reach out to us on Slack or during the Antrea office
+hours](../README.md/#community).

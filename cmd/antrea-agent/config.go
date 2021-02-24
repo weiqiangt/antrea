@@ -120,6 +120,9 @@ type AgentConfig struct {
 	// Flow export frequency should be greater than or equal to 1.
 	// Defaults to "12".
 	FlowExportFrequency uint `yaml:"flowExportFrequency,omitempty"`
+	// Enable TLS communication from flow exporter to flow aggregator.
+	// Defaults to true.
+	EnableTLSToFlowAggregator bool `yaml:"enableTLSToFlowAggregator,omitempty"`
 	// Provide the port range used by NodePortLocal. When the NodePortLocal feature is enabled, a port from that range will be assigned
 	// whenever a Pod's container defines a specific port to be exposed (each container can define a list of ports as pod.spec.containers[].ports),
 	// and all Node traffic directed to that port will be forwarded to the Pod.
@@ -127,4 +130,11 @@ type AgentConfig struct {
 	// Provide the address of Kubernetes apiserver, to override any value provided in kubeconfig or InClusterConfig.
 	// Defaults to "". It must be a host string, a host:port pair, or a URL to the base of the apiserver.
 	KubeAPIServerOverride string `yaml:"kubeAPIServerOverride,omitempty"`
+	// Cipher suites to use.
+	TLSCipherSuites string `yaml:"tlsCipherSuites,omitempty"`
+	// TLS min version.
+	TLSMinVersion string `yaml:"tlsMinVersion,omitempty"`
+	// A string slice of values which specify the addresses to use for NodePorts. Values may be valid IP blocks
+	// (e.g. 1.2.3.0/24, 1.2.3.4/32). The default empty string slice ([]) means to use all local addresses.
+	NodePortAddresses []string `yaml:"nodePortAddresses,omitempty"`
 }

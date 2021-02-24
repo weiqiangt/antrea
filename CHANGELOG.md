@@ -11,6 +11,96 @@ Some experimental features can be enabled / disabled using [Feature Gates](docs/
 
 ## Unreleased
 
+## 0.13.0 - 2021-02-11
+
+Includes all the changes from [0.12.1].
+
+### Added
+
+- Add [NodePortLocal] feature to improve integration with external load-balancers. ([#1459](https://github.com/vmware-tanzu/antrea/pull/1459) [#1743](https://github.com/vmware-tanzu/antrea/pull/1743) [#1758](https://github.com/vmware-tanzu/antrea/pull/1758), [@monotosh-avi] [@chauhanshubham] [@hemantavi]) [Alpha - Feature Gate: `NodePortLocal`]
+  * Services can be annotated with "nodeportlocal.antrea.io/enabled" to indicate that NodePortLocal should be enabled for this Service's Pod Endpoints
+  * For each container port exposed by such a Pod, the Antrea Agent will allocate a local Node port value and traffic sent to this Node port will be forwarded to the container port using DNAT
+  * The mapping from allocated Node ports to container ports is stored in a new Pod annotation, "nodeportlocal.antrea.io", e.g. to be consumed by external load-balancers
+- Introduce the [ClusterGroup CRD] to logically group different network endpoints and reference them together in Antrea-native policies. ([#1782](https://github.com/vmware-tanzu/antrea/issues/1782), [@abhiraut] [@Dyanngg])
+  * The extra level of indirection enables separation between workload selection and policy definition
+  * ClusterGroups can be referenced in Antrea ClusterNetworkPolicies, either in the AppliedTo or as peers in policy rules ([#1750](https://github.com/vmware-tanzu/antrea/pull/1750) [#1734](https://github.com/vmware-tanzu/antrea/pull/1734))
+  * In addition to the Pod / Namespace selectors and ipBlocks, ClusterGroups can reference a Service by name directly, and all Pod Endpoints for this Service will be included in the ClusterGroup ([#1797](https://github.com/vmware-tanzu/antrea/pull/1797))
+  * ClusterGroups can also select ExternalEntitites, which are used to represent labelled non-Pod endpoints ([#1828](https://github.com/vmware-tanzu/antrea/pull/1828))
+  * The ClusterGroup CRD includes a Status subresource used to indicate whether the Antrea Controller has already computed the membership list for the group ([#1778](https://github.com/vmware-tanzu/antrea/pull/1778))
+  * New APIs are defined in "controlplane.antrea.tanzu.vmware.com/v1beta2": "/clustergroupmembers" retrieves the list of members of a group and "/groupassociations" retrieves the list of groups that a given endpoint (Pod or ExternalEntity) belongs to ([#1688](https://github.com/vmware-tanzu/antrea/pull/1688))
+- Add support for containerd runtime on Windows Nodes. ([#1781](https://github.com/vmware-tanzu/antrea/pull/1781) [#1832](https://github.com/vmware-tanzu/antrea/pull/1832), [@ruicao93]) [Windows]
+- Add [EndpointSlice] support to AntreaProxy. ([#1703](https://github.com/vmware-tanzu/antrea/pull/1703), [@hongliangl]) [Alpha - Feature Gate: `EndpointSlice`]
+  * EndpointSlice needs to be [enabled](https://kubernetes.io/docs/tasks/administer-cluster/enabling-endpointslices/) in the K8s cluster
+  * Only the "discovery.k8s.io/v1beta1" EndpointSlice API is supported
+- Add support for arm/v7 and arm64 by providing Antrea Docker images for these architectures. ([#1771](https://github.com/vmware-tanzu/antrea/pull/1771), [@antoninbas])
+  * Refer to the [documentation](https://github.com/vmware-tanzu/antrea/blob/main/docs/arm-support.md) for instructions on how to use the image
+- Support IPv6 packets in Traceflow. ([#1579](https://github.com/vmware-tanzu/antrea/pull/1579), [@gran-vmv])
+- Add the following Prometheus metrics to the the AntreaProxy implementation: "antrea_proxy_sync_proxy_rules_duration_seconds", "antrea_proxy_total_endpoints_installed", "antrea_proxy_total_endpoints_updates", "antrea_proxy_total_services_installed", "antrea_proxy_total_services_updates". ([#1704](https://github.com/vmware-tanzu/antrea/pull/1704), [@weiqiangt])
+- Add the following Prometheus metrics to count Status updates for Antrea-native policies: "antrea_controller_acnp_status_updates", "antrea_controller_anp_status_updates". ([#1801](https://github.com/vmware-tanzu/antrea/pull/1801), [@antoninbas])
+- Add support for TLS between the Antrea Agent FlowExporter and the FlowAggregator, using self-signed certificates. ([#1649](https://github.com/vmware-tanzu/antrea/pull/1649), [@zyiou])
+- New Antrea Agent configuration option, "kubeAPIServerOverride", which can be used to explicitly provide an address for the K8s apiserver when the Agent is running as Pod; by default, the Agent uses the ClusterIP for the kubernetes Service. ([#1735](https://github.com/vmware-tanzu/antrea/pull/1735), [@anfernee])
+- Provide ability to configure TLS cipher suites supported by the Antrea apiservers (Agent and Controller). ([#1784](https://github.com/vmware-tanzu/antrea/pull/1784), [@lzhecheng])
+- Add liveness probe to Antrea Controller to ensure it is automatically restarted after a while by kubelet if it stops being responsive. ([#1839](https://github.com/vmware-tanzu/antrea/pull/1839), [@antoninbas])
+- Document workaround to install OVS and Antrea on Windows Nodes for which the CPU does not have the required virtualization capabilities, as may be the case for cloud VMs. ([#1744](https://github.com/vmware-tanzu/antrea/pull/1744), [@ruicao93]) [Windows]
+- Improve documentation for "noEncap" and "hybrid" traffic modes, and add information about how to use [Kube-router] to advertise Pod CIDRs to the fabric with BGP. ([#1798](https://github.com/vmware-tanzu/antrea/pull/1798), [@jianjuns])
+- Add new NetworkPolicy testsuite based on auto-generated test cases. ([#1765](https://github.com/vmware-tanzu/antrea/pull/1765), [@mattfenwick])
+
+### Changed
+
+- Change permissions for the "/var/run/antrea" directory created by the Antrea Agent on each Node to prevent non-root users from accessing it; among other things, it includes the socket file used to send CNI commands to the Agent. ([#1770](https://github.com/vmware-tanzu/antrea/pull/1770), [@jianjuns])
+- Add multi-table support to the "antctl get ovsflows" command, to dump flows from multiple tables at once. ([#1708](https://github.com/vmware-tanzu/antrea/pull/1708), [@weiqiangt])
+- Change the sanity check performed by the Antrea Agent to validate that the Hyper-V dependency is satisfied. ([#1741](https://github.com/vmware-tanzu/antrea/pull/1741), [@ruicao93])
+- Periodically verify that the static iptables rules required by Antrea are present and install missing rules if any. ([#1751](https://github.com/vmware-tanzu/antrea/pull/1751), [@siddhant94])
+- Update Mellanox/sriovnet dependency to version v1.0.2 to support OVS hardware offload to Mellanox devices with Kernel versions 5.8 and above. ([#1845](https://github.com/vmware-tanzu/antrea/pull/1845), [@Mmduh-483])
+- Remove dependency on [juju](https://github.com/juju) libraries, which are distributed under an LGPL v3 license. ([#1796](https://github.com/vmware-tanzu/antrea/pull/1796), [@antoninbas])
+
+### Fixed
+
+- Ensure that NodePort traffic does not bypass NetworkPolicies. ([#1816](https://github.com/vmware-tanzu/antrea/pull/1816), [@tnqn])
+  * NodePort traffic for which ExternalTrafficPolicy is set to Cluster goes through SNAT before NetworkPolicies are enforced; after SNAT the source IP is the IP of the local gateway interface (antrea-gw0)
+  * Users will need to define the appropriate NetworkPolicies to allow ingress access to isolated Pods for NodePort traffic
+  * This new behavior only applies to Linux Nodes using the OVS system datapath (default)
+- When clearing the flow-restore-wait config for the OVS bridge after re-installing flows, ensure that the operation happened successfully and retry if anything unexpected happen; if flow-restore-wait is not cleared, the bridge will not forward packets correctly. ([#1730](https://github.com/vmware-tanzu/antrea/pull/1730), [@tnqn])
+- Stop mounting the host's kmod binary to the Antrea initContainer as it may depend on shared libraries not available in the container. ([#1777](https://github.com/vmware-tanzu/antrea/pull/1777), [@antoninbas])
+- Fix crashes in the FlowAggregator, along with numerous spurious warnings, by updating the version of the [go-ipfix] library. ([#1817](https://github.com/vmware-tanzu/antrea/pull/1817), [@zyiou] [@srikartati])
+- Fix issues with reference logstash configuration and improve reference Kibana dashboards for flow visualization with the FlowExporter feature. ([#1727](https://github.com/vmware-tanzu/antrea/pull/1727), [@zyiou])
+
+## 0.11.2 - 2021-02-11
+
+### Fixed
+
+- Send necessary updates to Antrea Agents when a Pod's IP address is updated, as otherwise NetworkPolicies are not enforced correctly. ([#1808](https://github.com/vmware-tanzu/antrea/pull/1808), [@Dyanngg] [@tnqn])
+- On Antrea Agent restart, ensure that OpenFlow priorities are assigned correctly for NetworkPolicy rules, and that rules with the same tier and priority are assigned the same OpenFlow priority. ([#1841](https://github.com/vmware-tanzu/antrea/pull/1841), [@Dyanngg])
+- Do not release the OpenFlow priority assigned to a NetworkPolicy rule in case of a transient error when installing the corresponding flows, if other rules are using the same OpenFlow priority. ([#1844](https://github.com/vmware-tanzu/antrea/pull/1844), [@Dyanngg])
+- Do not delete Endpoint flows when an Endpoint is no longer used for a specific Service (or if a Service is deleted) if these flows are still required by another Service. ([#1815](https://github.com/vmware-tanzu/antrea/pull/1815), [@weiqiangt])
+- Fix bugs in IPv6 AntreaProxy implementation, notably for flow "hairpinning" and ServiceAffinity support. ([#1713](https://github.com/vmware-tanzu/antrea/pull/1713), [@lzhecheng])
+- Support non-standardized CIDRs (CIDRs for which some address bits may not have been masked off as per the prefix length) in NetworkPolicies. ([#1767](https://github.com/vmware-tanzu/antrea/pull/1767), [@tnqn])
+- Fix minimum required Linux Kernel version (4.6) in documentation. ([#1757](https://github.com/vmware-tanzu/antrea/pull/1757), [@hongliangl])
+- Fix Agent crash when creating an Antrea-native policy with a "drop" action, while the NetworkPolicyStats feature is enabled. ([#1606](https://github.com/vmware-tanzu/antrea/pull/1606), [@ceclinux])
+- Fix Traceflow when Antrea-native policies are created with a "drop" action. ([#1602](https://github.com/vmware-tanzu/antrea/pull/1602), [@gran-vmv] [@lzhecheng])
+- Fix Agent crash when enabling NetworkPolicyStats and Traceflow feature together and creating an Antrea-native policy with a "drop" action. ([#1615](https://github.com/vmware-tanzu/antrea/pull/1615), [@tnqn])
+- When the destination is a Service in a Traceflow request, do not overwrite the default TCP SYN flag (needed for the packet to be processed by AntreaProxy correctly) unless the user explicitly provided a non-zero value. ([#1602](https://github.com/vmware-tanzu/antrea/pull/1602), [@gran-vmv] [@lzhecheng])
+- Improve handling of transient OVS errors when installing flows for policy rules in the Agent, by ensuring that retries are executed correctly. ([#1667](https://github.com/vmware-tanzu/antrea/pull/1667), [@tnqn])
+
+## 0.12.1 - 2021-02-10
+
+### Changed
+
+- More uniform mechanism in the OVS pipeline to determine whether a MAC address rewrite is needed. ([#1597](https://github.com/vmware-tanzu/antrea/pull/1597) [#1754](https://github.com/vmware-tanzu/antrea/pull/1754), [@wenyingd] [@jianjuns])
+
+### Fixed
+
+- Send necessary updates to Antrea Agents when a Pod's IP address is updated, as otherwise NetworkPolicies are not enforced correctly. ([#1808](https://github.com/vmware-tanzu/antrea/pull/1808), [@Dyanngg] [@tnqn])
+- On Antrea Agent restart, ensure that OpenFlow priorities are assigned correctly for NetworkPolicy rules, and that rules with the same tier and priority are assigned the same OpenFlow priority. ([#1841](https://github.com/vmware-tanzu/antrea/pull/1841), [@Dyanngg])
+- Do not release the OpenFlow priority assigned to a NetworkPolicy rule in case of a transient error when installing the corresponding flows, if other rules are using the same OpenFlow priority. ([#1844](https://github.com/vmware-tanzu/antrea/pull/1844), [@Dyanngg])
+- Do not delete Endpoint flows when an Endpoint is no longer used for a specific Service (or if a Service is deleted) if these flows are still required by another Service. ([#1815](https://github.com/vmware-tanzu/antrea/pull/1815), [@weiqiangt])
+- Fix AntreaProxy implementation on Windows for ClusterIP Services with endpoints outside of the cluster's Pod CIDR, by ensuring that SNAT is performed correctly. ([#1824](https://github.com/vmware-tanzu/antrea/pull/1824), [@ruicao93]) [Windows]
+- More robust error handling for network adapter operations on Windows; in particular add a retry mechanism if enabling the network adapter fails. ([#1736](https://github.com/vmware-tanzu/antrea/pull/1736), [@ruicao93]) [Windows]
+- When the Antrea Agent process is run using the provided PowerShell script, ensure that the Kubeconfigs used by the Agent to connect to the K8s and Antrea Controller apiservers are updated on every restart. ([#1847](https://github.com/vmware-tanzu/antrea/pull/1847), [@ruicao93]) [Windows]
+- Fix bugs in IPv6 AntreaProxy implementation, notably for flow "hairpinning" and ServiceAffinity support. ([#1713](https://github.com/vmware-tanzu/antrea/pull/1713), [@lzhecheng])
+- Support non-standardized CIDRs (CIDRs for which some address bits may not have been masked off as per the prefix length) in NetworkPolicies. ([#1767](https://github.com/vmware-tanzu/antrea/pull/1767), [@tnqn])
+- Fix minimum required Linux Kernel version (4.6) in documentation. ([#1757](https://github.com/vmware-tanzu/antrea/pull/1757), [@hongliangl])
+
 ## 0.12.0 - 2020-12-22
 
 Includes all the changes from [0.11.1].
@@ -606,14 +696,14 @@ The Monitoring [CRDs] feature is graduated from Alpha to Beta.
 [Octant]: https://github.com/vmware-tanzu/octant
 [EKS]: https://aws.amazon.com/eks/
 [GKE]: https://cloud.google.com/kubernetes-engine
-[Antrea Windows documentation]: https://github.com/vmware-tanzu/antrea/blob/master/docs/windows.md
-[OVS pipeline documentation]: https://github.com/vmware-tanzu/antrea/blob/master/docs/design/ovs-pipeline.md
-[OVS hardware offload]: https://github.com/vmware-tanzu/antrea/blob/master/docs/ovs-offload.md
+[Antrea Windows documentation]: https://github.com/vmware-tanzu/antrea/blob/main/docs/windows.md
+[OVS pipeline documentation]: https://github.com/vmware-tanzu/antrea/blob/main/docs/design/ovs-pipeline.md
+[OVS hardware offload]: https://github.com/vmware-tanzu/antrea/blob/main/docs/ovs-offload.md
 [AKS]: https://azure.microsoft.com/en-us/services/kubernetes-service/
-[Flow Exporter]: https://github.com/vmware-tanzu/antrea/blob/master/docs/network-flow-visibility.md
+[Flow Exporter]: https://github.com/vmware-tanzu/antrea/blob/main/docs/network-flow-visibility.md
 [Elastic Stack]: https://www.elastic.co/elastic-stack
 [strongSwan]: https://www.strongswan.org/
-[Antrea Policy CRDs documentation]: https://github.com/vmware-tanzu/antrea/blob/master/docs/antrea-network-policy.md
+[Antrea Policy CRDs documentation]: https://github.com/vmware-tanzu/antrea/blob/main/docs/antrea-network-policy.md
 [Default cluster roles]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#user-facing-roles
 [Aggregated ClusterRoles]: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#aggregated-clusterroles
 [Admission webhooks]: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/
@@ -621,6 +711,10 @@ The Monitoring [CRDs] feature is graduated from Alpha to Beta.
 [bandwidth plugin]: https://github.com/containernetworking/plugins/tree/master/plugins/meta/bandwidth
 [IPFIX mediator]: https://tools.ietf.org/html/rfc6183
 [go-ipfix]: https://github.com/vmware/go-ipfix
+[NodePortLocal]: https://github.com/vmware-tanzu/antrea/blob/main/docs/feature-gates.md#nodeportlocal
+[ClusterGroup CRD]: https://github.com/vmware-tanzu/antrea/blob/main/docs/antrea-network-policy.md#clustergroup
+[Kube-router]: https://www.kube-router.io/
+[EndpointSlice]: https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/
 
 [0.9.1]: #091---2020-08-21
 [0.9.2]: #092---2020-08-27
@@ -628,31 +722,40 @@ The Monitoring [CRDs] feature is graduated from Alpha to Beta.
 [0.10.1]: #0101---2020-09-30
 [0.10.2]: #0102---2020-11-11
 [0.11.1]: #0111---2020-11-20
+[0.12.1]: #0121---2021-02-10
 
 [@AbdYsn]: https://github.com/AbdYsn
 [@abhiraut]: https://github.com/abhiraut
 [@alex-vmw]: https://github.com/alex-vmw
 [@andrewsykim]: https://github.com/andrewsykim
+[@anfernee]: https://github.com/anfernee
 [@antoninbas]: https://github.com/antoninbas
 [@ceclinux]: https://github.com/ceclinux
+[@chauhanshubham]: https://github.com/chauhanshubham
 [@dreamtalen]: https://github.com/dreamtalen
 [@dumlutimuralp]: https://github.com/dumlutimuralp
 [@Dyanngg]: https://github.com/Dyanngg
 [@gran-vmv]: https://github.com/gran-vmv
 [@GraysonWu]: https://github.com/GraysonWu
 [@guesslin]: https://github.com/guesslin
+[@hemantavi]: https://github.com/hemantavi
+[@hongliangl]: https://github.com/hongliangl
 [@jakesokol1]: https://github.com/jakesokol1
 [@jayunit100]: https://github.com/jayunit100
 [@jianjuns]: https://github.com/jianjuns
 [@ksamoray]: https://github.com/ksamoray
 [@liu4480]: https://github.com/liu4480
 [@lzhecheng]: https://github.com/lzhecheng
+[@mattfenwick]: https://github.com/mattfenwick
 [@MatthewHinton56]: https://github.com/MatthewHinton56
 [@mengdie-song]: https://github.com/mengdie-song
+[@Mmduh-483]: https://github.com/Mmduh-483
+[@monotosh-avi]: https://github.com/monotosh-avi
 [@moshe010]: https://github.com/moshe010
 [@qiyueyao]: https://github.com/qiyueyao
 [@reachjainrahul]: https://github.com/reachjainrahul
 [@ruicao93]: https://github.com/ruicao93
+[@siddhant94]: https://github.com/siddhant94
 [@srikartati]: https://github.com/srikartati
 [@suwang48404]: https://github.com/suwang48404
 [@tnqn]: https://github.com/tnqn

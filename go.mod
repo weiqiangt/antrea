@@ -3,12 +3,12 @@ module github.com/vmware-tanzu/antrea
 go 1.15
 
 require (
-	github.com/Mellanox/sriovnet v1.0.1
-	github.com/Microsoft/go-winio v0.4.15-0.20190919025122-fc70bd9a86b5
+	github.com/Mellanox/sriovnet v1.0.2
+	github.com/Microsoft/go-winio v0.4.16-0.20201130162521-d1ffc52c7331
 	github.com/Microsoft/hcsshim v0.8.9
 	github.com/TomCodeLV/OVSDB-golang-lib v0.0.0-20200116135253-9bbdfadcd881
+	github.com/antoninbas/go-powershell v0.1.0
 	github.com/awalterschulze/gographviz v2.0.1+incompatible
-	github.com/benmoss/go-powershell v0.0.0-20190925205200-09527df358ca
 	github.com/blang/semver v3.5.0+incompatible
 	github.com/cenk/hub v1.0.1 // indirect
 	github.com/cenkalti/hub v1.0.1 // indirect
@@ -27,29 +27,31 @@ require (
 	github.com/golang/mock v1.4.4
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v1.1.1
-	github.com/juju/testing v0.0.0-20201030020617-7189b3728523 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd
+	github.com/kr/text v0.2.0 // indirect
+	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.4.1
 	github.com/rakelkar/gonetsh v0.0.0-20190930180311-e5c5ffe4bdf0
 	github.com/satori/go.uuid v1.2.0
 	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/afero v1.3.4
+	github.com/spf13/afero v1.4.1
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.5
 	github.com/streamrail/concurrent-map v0.0.0-20160823150647-8bf1e9bacbf6 // indirect
 	github.com/stretchr/testify v1.6.1
 	github.com/ti-mo/conntrack v0.3.0
 	github.com/vishvananda/netlink v1.1.0
-	github.com/vmware/go-ipfix v0.4.2
+	github.com/vmware/go-ipfix v0.4.5
 	golang.org/x/crypto v0.0.0-20200820211705-5c72a883971a
 	golang.org/x/exp v0.0.0-20190312203227-4b39c73a6495
 	golang.org/x/mod v0.4.0
 	golang.org/x/net v0.0.0-20200904194848-62affa334b73
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	golang.org/x/sys v0.0.0-20200331124033-c3d80250170d
+	golang.org/x/sys v0.0.0-20201201145000-ef89a241ccb3
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 	google.golang.org/grpc v1.26.0
+	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v2 v2.3.0
 	k8s.io/api v0.18.4
@@ -65,9 +67,17 @@ require (
 )
 
 replace (
+	// hcshim repo is modifed to add "AdditionalParams" field to HNSEndpoint struct.
+	// We will use this replace before pushing the change to hcshim upstream repo.
+	github.com/Microsoft/hcsshim v0.8.9 => github.com/ruicao93/hcsshim v0.8.10-0.20210114035434-63fe00c1b9aa
+	// temporary replacement to avoid Antrea Agent panics for some Traceflow requests
+	// see https://github.com/vmware-tanzu/antrea/issues/1878
+	github.com/contiv/libOpenflow => github.com/antoninbas/libOpenflow v0.0.0-20210218001059-32f2e57d0435
 	// antrea/plugins/octant/go.mod also has this replacement since replace statement in dependencies
 	// were ignored. We need to change antrea/plugins/octant/go.mod if there is any change here.
-	github.com/contiv/ofnet => github.com/wenyingd/ofnet v0.0.0-20201109024835-6fd225d8c8d1
+	github.com/contiv/ofnet => github.com/wenyingd/ofnet v0.0.0-20210205051801-5a4f247248d4
+	// avoid dependency on juju packages, which are licensed under LGPL v3
+	github.com/rakelkar/gonetsh => github.com/antoninbas/gonetsh v0.1.2
 	// fake.NewSimpleClientset is quite slow when it's initialized with massive objects due to
 	// https://github.com/kubernetes/kubernetes/issues/89574. It takes more than tens of minutes to
 	// init a fake client with 200k objects, which makes it hard to run the NetworkPolicy scale test.

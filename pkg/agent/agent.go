@@ -189,7 +189,7 @@ func (i *Initializer) initInterfaceStore() error {
 			}
 		default:
 			// The port should be for a container interface.
-			intf = cniserver.ParseOVSPortInterfaceConfig(port, ovsPort)
+			intf = cniserver.ParseOVSPortInterfaceConfig(port, ovsPort, true)
 		}
 		if intf != nil {
 			ifaceList = append(ifaceList, intf)
@@ -365,6 +365,11 @@ func (i *Initializer) initOpenFlowPipeline() error {
 			klog.Info("Replaying OF flows to OVS bridge")
 			i.ofClient.ReplayFlows()
 			klog.Info("Flow replay completed")
+
+			if i.ovsBridgeClient.GetOVSDatapathType() == ovsconfig.OVSDatapathNetdev {
+				// we don't set flow-restore-wait when using the OVS netdev datapath
+				return
+			}
 
 			// ofClient and ovsBridgeClient have their own mechanisms to restore connections with OVS, and it could
 			// happen that ovsBridgeClient's connection is not ready when ofClient completes flow replay. We retry it

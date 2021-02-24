@@ -68,6 +68,7 @@ const (
 	antreaDefaultGW            string = "antrea-gw0"
 	testNamespace              string = "antrea-test"
 	busyboxContainerName       string = "busybox"
+	controllerContainerName    string = "antrea-controller"
 	ovsContainerName           string = "antrea-ovs"
 	agentContainerName         string = "antrea-agent"
 	antreaYML                  string = "antrea.yml"
@@ -93,7 +94,7 @@ const (
 	busyboxImage        = "projects.registry.vmware.com/library/busybox"
 	nginxImage          = "projects.registry.vmware.com/antrea/nginx"
 	perftoolImage       = "projects.registry.vmware.com/antrea/perftool"
-	ipfixCollectorImage = "projects.registry.vmware.com/antrea/ipfix-collector:v0.4.2"
+	ipfixCollectorImage = "projects.registry.vmware.com/antrea/ipfix-collector:v0.4.3"
 	ipfixCollectorPort  = "4739"
 
 	nginxLBService = "nginx-loadbalancer"
@@ -102,6 +103,7 @@ const (
 type ClusterNode struct {
 	idx  int // 0 for control-plane Node
 	name string
+	ip   string
 }
 
 type ClusterInfo struct {
@@ -187,6 +189,19 @@ func workerNodeName(idx int) string {
 	}
 }
 
+// workerNodeIP returns an empty string if there is no worker Node with the provided idx
+// (including if idx is 0, which is reserved for the control-plane Node)
+func workerNodeIP(idx int) string {
+	if idx == 0 { // control-plane Node
+		return ""
+	}
+	if node, ok := clusterInfo.nodes[idx]; !ok {
+		return ""
+	} else {
+		return node.ip
+	}
+}
+
 func controlPlaneNodeName() string {
 	return clusterInfo.controlPlaneNodeName
 }
@@ -211,6 +226,15 @@ func labelNodeRoleControlPlane() string {
 		return labelNodeRoleOldControlPlane
 	}
 	return labelNodeRoleControlPlane
+}
+
+func controlPlaneNoScheduleToleration() corev1.Toleration {
+	// the Node taint still uses "master" in K8s v1.20
+	return corev1.Toleration{
+		Key:      "node-role.kubernetes.io/master",
+		Operator: corev1.TolerationOpExists,
+		Effect:   corev1.TaintEffectNoSchedule,
+	}
 }
 
 func initProvider() error {
@@ -260,9 +284,18 @@ func collectClusterInfo() error {
 			workerIdx++
 		}
 
+		var nodeIP string
+		for _, address := range node.Status.Addresses {
+			if address.Type == corev1.NodeInternalIP {
+				nodeIP = address.Address
+				break
+			}
+		}
+
 		clusterInfo.nodes[nodeIdx] = ClusterNode{
 			idx:  nodeIdx,
 			name: node.Name,
+			ip:   nodeIP,
 		}
 	}
 	if clusterInfo.controlPlaneNodeName == "" {
@@ -447,6 +480,11 @@ func (data *TestData) deployAntreaFlowExporter(ipfixCollector string) error {
 		}
 		antreaAgentConf = strings.Replace(antreaAgentConf, "#flowPollInterval: \"5s\"", "flowPollInterval: \"1s\"", 1)
 		antreaAgentConf = strings.Replace(antreaAgentConf, "#flowExportFrequency: 12", "flowExportFrequency: 2", 1)
+		if testOptions.providerName == "kind" {
+			// In Kind cluster, there are issues with DNS name resolution on worker nodes.
+			// We will skip TLS testing for Kind cluster because the server certificate is generated with Flow aggregator's DNS name
+			antreaAgentConf = strings.Replace(antreaAgentConf, "#enableTLSToFlowAggregator: true", "enableTLSToFlowAggregator: false", 1)
+		}
 		data["antrea-agent.conf"] = antreaAgentConf
 	}, false, true)
 }
@@ -479,6 +517,11 @@ func (data *TestData) mutateFlowAggregatorConfigMap(ipfixCollector string) error
 	flowAggregatorConf, _ := configMap.Data[flowAggregatorConfName]
 	flowAggregatorConf = strings.Replace(flowAggregatorConf, "#externalFlowCollectorAddr: \"\"", fmt.Sprintf("externalFlowCollectorAddr: \"%s\"", ipfixCollector), 1)
 	flowAggregatorConf = strings.Replace(flowAggregatorConf, "#flowExportInterval: 60s", "flowExportInterval: 5s", 1)
+	if testOptions.providerName == "kind" {
+		// In Kind cluster, there are issues with DNS name resolution on worker nodes.
+		// We will skip TLS testing for Kind cluster because the server certificate is generated with Flow aggregator's DNS name
+		flowAggregatorConf = strings.Replace(flowAggregatorConf, "#aggregatorTransportProtocol: \"tls\"", "aggregatorTransportProtocol: \"tcp\"", 1)
+	}
 	configMap.Data[flowAggregatorConfName] = flowAggregatorConf
 	if _, err := data.clientset.CoreV1().ConfigMaps(flowAggregatorNamespace).Update(context.TODO(), configMap, metav1.UpdateOptions{}); err != nil {
 		return fmt.Errorf("failed to update ConfigMap %s: %v", configMap.Name, err)
@@ -718,10 +761,17 @@ func (data *TestData) createPodOnNode(name string, nodeName string, image string
 	// image could be a fully qualified URI which can't be used as container name and label value,
 	// extract the image name from it.
 	imageName := getImageName(image)
+	return data.createPodOnNodeInNamespace(name, testNamespace, nodeName, imageName, image, command, args, env, ports, hostNetwork, mutateFunc)
+}
+
+// createPodOnNodeInNamespace creates a pod in the provided namespace with a container whose type is decided by imageName.
+// Pod will be scheduled on the specified Node (if nodeName is not empty).
+// mutateFunc can be used to customize the Pod if the other parameters don't meet the requirements.
+func (data *TestData) createPodOnNodeInNamespace(name, ns string, nodeName, ctrName string, image string, command []string, args []string, env []corev1.EnvVar, ports []corev1.ContainerPort, hostNetwork bool, mutateFunc func(*corev1.Pod)) error {
 	podSpec := corev1.PodSpec{
 		Containers: []corev1.Container{
 			{
-				Name:            imageName,
+				Name:            ctrName,
 				Image:           image,
 				ImagePullPolicy: corev1.PullIfNotPresent,
 				Command:         command,
@@ -740,11 +790,7 @@ func (data *TestData) createPodOnNode(name string, nodeName string, image string
 	}
 	if nodeName == controlPlaneNodeName() {
 		// tolerate NoSchedule taint if we want Pod to run on control-plane Node
-		noScheduleToleration := corev1.Toleration{
-			Key:      labelNodeRoleControlPlane(),
-			Operator: corev1.TolerationOpExists,
-			Effect:   corev1.TaintEffectNoSchedule,
-		}
+		noScheduleToleration := controlPlaneNoScheduleToleration()
 		podSpec.Tolerations = []corev1.Toleration{noScheduleToleration}
 	}
 	pod := &corev1.Pod{
@@ -752,7 +798,7 @@ func (data *TestData) createPodOnNode(name string, nodeName string, image string
 			Name: name,
 			Labels: map[string]string{
 				"antrea-e2e": name,
-				"app":        imageName,
+				"app":        ctrName,
 			},
 		},
 		Spec: podSpec,
@@ -760,7 +806,7 @@ func (data *TestData) createPodOnNode(name string, nodeName string, image string
 	if mutateFunc != nil {
 		mutateFunc(pod)
 	}
-	if _, err := data.clientset.CoreV1().Pods(testNamespace).Create(context.TODO(), pod, metav1.CreateOptions{}); err != nil {
+	if _, err := data.clientset.CoreV1().Pods(ns).Create(context.TODO(), pod, metav1.CreateOptions{}); err != nil {
 		return err
 	}
 	return nil
@@ -771,6 +817,15 @@ func (data *TestData) createPodOnNode(name string, nodeName string, image string
 func (data *TestData) createBusyboxPodOnNode(name string, nodeName string) error {
 	sleepDuration := 3600 // seconds
 	return data.createPodOnNode(name, nodeName, busyboxImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, false, nil)
+}
+
+// createHostNetworkBusyboxPodOnNode creates a host network Pod in the test namespace with a single busybox container.
+// The Pod will be scheduled on the specified Node (if nodeName is not empty).
+func (data *TestData) createHostNetworkBusyboxPodOnNode(name string, nodeName string) error {
+	sleepDuration := 3600 // seconds
+	return data.createPodOnNode(name, nodeName, busyboxImage, []string{"sleep", strconv.Itoa(sleepDuration)}, nil, nil, nil, false, func(pod *corev1.Pod) {
+		pod.Spec.HostNetwork = true
+	})
 }
 
 // createBusyboxPod creates a Pod in the test namespace with a single busybox container.
@@ -796,16 +851,31 @@ func (data *TestData) createNginxPod(name, nodeName string) error {
 }
 
 // createServerPod creates a Pod that can listen to specified port and have named port set.
-func (data *TestData) createServerPod(name string, portName string, portNum int, setHostPort bool) error {
+func (data *TestData) createServerPod(name string, portName string, portNum int32, setHostPort bool) error {
 	// See https://github.com/kubernetes/kubernetes/blob/master/test/images/agnhost/porter/porter.go#L17 for the image's detail.
 	cmd := "porter"
 	env := corev1.EnvVar{Name: fmt.Sprintf("SERVE_PORT_%d", portNum), Value: "foo"}
-	port := corev1.ContainerPort{Name: portName, ContainerPort: int32(portNum)}
+	port := corev1.ContainerPort{Name: portName, ContainerPort: portNum}
 	if setHostPort {
 		// If hostPort is to be set, it must match the container port number.
 		port.HostPort = int32(portNum)
 	}
 	return data.createPodOnNode(name, "", agnhostImage, nil, []string{cmd}, []corev1.EnvVar{env}, []corev1.ContainerPort{port}, false, nil)
+}
+
+// createCustomPod creates a Pod in given Namespace with custom labels.
+func (data *TestData) createServerPodWithLabels(name, ns string, portNum int32, labels map[string]string) error {
+	cmd := []string{"ncat", "-lk", "-p", fmt.Sprintf("%d", portNum)}
+	image := "antrea/netpol-test:latest"
+	env := corev1.EnvVar{Name: fmt.Sprintf("SERVE_PORT_%d", portNum), Value: "foo"}
+	port := corev1.ContainerPort{ContainerPort: portNum}
+	containerName := fmt.Sprintf("c%v", portNum)
+	mutateLabels := func(pod *corev1.Pod) {
+		for k, v := range labels {
+			pod.Labels[k] = v
+		}
+	}
+	return data.createPodOnNodeInNamespace(name, ns, "", containerName, image, cmd, nil, []corev1.EnvVar{env}, []corev1.ContainerPort{port}, false, mutateLabels)
 }
 
 // deletePod deletes a Pod in the test namespace.
@@ -1126,7 +1196,7 @@ func validatePodIP(podNetworkCIDR string, ip net.IP) (bool, error) {
 }
 
 // createService creates a service with port and targetPort.
-func (data *TestData) createService(serviceName string, port, targetPort int, selector map[string]string, affinity bool,
+func (data *TestData) createService(serviceName string, port, targetPort int32, selector map[string]string, affinity bool,
 	serviceType corev1.ServiceType, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
 	affinityType := corev1.ServiceAffinityNone
 	if affinity {
@@ -1144,8 +1214,8 @@ func (data *TestData) createService(serviceName string, port, targetPort int, se
 		Spec: corev1.ServiceSpec{
 			SessionAffinity: affinityType,
 			Ports: []corev1.ServicePort{{
-				Port:       int32(port),
-				TargetPort: intstr.FromInt(targetPort),
+				Port:       port,
+				TargetPort: intstr.FromInt(int(targetPort)),
 			}},
 			Type:     serviceType,
 			Selector: selector,
@@ -1156,8 +1226,16 @@ func (data *TestData) createService(serviceName string, port, targetPort int, se
 }
 
 // createNginxClusterIPService create a nginx service with the given name.
-func (data *TestData) createNginxClusterIPService(affinity bool, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
-	return data.createService("nginx", 80, 80, map[string]string{"app": "nginx"}, affinity, corev1.ServiceTypeClusterIP, ipFamily)
+func (data *TestData) createNginxClusterIPService(name string, affinity bool, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
+	if name == "" {
+		name = "nginx"
+	}
+	return data.createService(name, 80, 80, map[string]string{"app": "nginx"}, affinity, corev1.ServiceTypeClusterIP, ipFamily)
+}
+
+// createNginxNodePortService create a NodePort nginx service with the given name.
+func (data *TestData) createNginxNodePortService(affinity bool, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
+	return data.createService("nginx", 80, 80, map[string]string{"app": "nginx"}, affinity, corev1.ServiceTypeNodePort, ipFamily)
 }
 
 func (data *TestData) createNginxLoadBalancerService(affinity bool, ingressIPs []string, ipFamily *corev1.IPFamily) (*corev1.Service, error) {
@@ -1351,7 +1429,7 @@ func (data *TestData) runPingCommandFromTestPod(podName string, targetPodIPs *Po
 	return nil
 }
 
-func (data *TestData) runNetcatCommandFromTestPod(podName string, server string, port int) error {
+func (data *TestData) runNetcatCommandFromTestPod(podName string, server string, port int32) error {
 	// Retrying several times to avoid flakes as the test may involve DNS (coredns) and Service/Endpoints (kube-proxy).
 	cmd := []string{
 		"/bin/sh",

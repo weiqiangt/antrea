@@ -43,6 +43,8 @@ const (
 	defaultFlowPollInterval       = 5 * time.Second
 	defaultFlowExportFrequency    = 12
 	defaultNPLPortRange           = "40000-41000"
+	defaultNodePortVirtualIP      = "169.254.169.110"
+	defaultNodePortVirtualIPv6    = "fec0::ffee:ddcc:bbaa"
 )
 
 type Options struct {
@@ -56,12 +58,17 @@ type Options struct {
 	flowCollectorProto string
 	// Flow exporter poll interval
 	pollInterval time.Duration
+	// The virtual IP for NodePort Service support.
+	nodePortVirtualIP, nodePortVirtualIPv6 net.IP
 }
 
 func newOptions() *Options {
 	return &Options{
+		nodePortVirtualIP:   net.ParseIP(defaultNodePortVirtualIP),
+		nodePortVirtualIPv6: net.ParseIP(defaultNodePortVirtualIPv6),
 		config: &AgentConfig{
-			EnablePrometheusMetrics: true,
+			EnablePrometheusMetrics:   true,
+			EnableTLSToFlowAggregator: true,
 		},
 	}
 }
@@ -110,7 +117,7 @@ func (o *Options) validate(args []string) error {
 	if o.config.EnableIPSecTunnel && o.config.TunnelType != ovsconfig.GRETunnel {
 		return fmt.Errorf("IPSec encyption is supported only for GRE tunnel")
 	}
-	if o.config.OVSDatapathType != ovsconfig.OVSDatapathSystem && o.config.OVSDatapathType != ovsconfig.OVSDatapathNetdev {
+	if o.config.OVSDatapathType != string(ovsconfig.OVSDatapathSystem) && o.config.OVSDatapathType != string(ovsconfig.OVSDatapathNetdev) {
 		return fmt.Errorf("OVS datapath type %s is not supported", o.config.OVSDatapathType)
 	}
 	ok, encapMode := config.GetTrafficEncapModeFromStr(o.config.TrafficEncapMode)
@@ -140,6 +147,9 @@ func (o *Options) validate(args []string) error {
 		// (but SNAT can be done by the primary CNI).
 		o.config.NoSNAT = true
 	}
+	if err := o.validateAntreaProxyConfig(); err != nil {
+		return fmt.Errorf("proxy config is invalid: %w", err)
+	}
 	if err := o.validateFlowExporterConfig(); err != nil {
 		return fmt.Errorf("failed to validate flow exporter config: %v", err)
 	}
@@ -163,7 +173,7 @@ func (o *Options) setDefaults() {
 		o.config.OVSBridge = defaultOVSBridge
 	}
 	if o.config.OVSDatapathType == "" {
-		o.config.OVSDatapathType = ovsconfig.OVSDatapathSystem
+		o.config.OVSDatapathType = string(ovsconfig.OVSDatapathSystem)
 	}
 	if o.config.OVSRunDir == "" {
 		o.config.OVSRunDir = ovsconfig.DefaultOVSRunDir
@@ -205,6 +215,17 @@ func (o *Options) setDefaults() {
 			o.config.NPLPortRange = defaultNPLPortRange
 		}
 	}
+}
+
+func (o *Options) validateAntreaProxyConfig() error {
+	if features.DefaultFeatureGate.Enabled(features.AntreaProxyNodePort) {
+		for _, nodePortAddress := range o.config.NodePortAddresses {
+			if _, _, err := net.ParseCIDR(nodePortAddress); err != nil {
+				return fmt.Errorf("NodePortAddress is not valid, can not parse `%s`: %w", nodePortAddress, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (o *Options) validateFlowExporterConfig() error {

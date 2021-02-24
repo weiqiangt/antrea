@@ -96,6 +96,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*ClusterGroupMembers)(nil), (*controlplane.ClusterGroupMembers)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_ClusterGroupMembers_To_controlplane_ClusterGroupMembers(a.(*ClusterGroupMembers), b.(*controlplane.ClusterGroupMembers), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*controlplane.ClusterGroupMembers)(nil), (*ClusterGroupMembers)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_controlplane_ClusterGroupMembers_To_v1beta2_ClusterGroupMembers(a.(*controlplane.ClusterGroupMembers), b.(*ClusterGroupMembers), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*ExternalEntityReference)(nil), (*controlplane.ExternalEntityReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_ExternalEntityReference_To_controlplane_ExternalEntityReference(a.(*ExternalEntityReference), b.(*controlplane.ExternalEntityReference), scope)
 	}); err != nil {
@@ -106,23 +116,13 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*Group)(nil), (*controlplane.Group)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Group_To_controlplane_Group(a.(*Group), b.(*controlplane.Group), scope)
+	if err := s.AddGeneratedConversionFunc((*GroupAssociation)(nil), (*controlplane.GroupAssociation)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_GroupAssociation_To_controlplane_GroupAssociation(a.(*GroupAssociation), b.(*controlplane.GroupAssociation), scope)
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*controlplane.Group)(nil), (*Group)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_controlplane_Group_To_v1beta2_Group(a.(*controlplane.Group), b.(*Group), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*GroupList)(nil), (*controlplane.GroupList)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_GroupList_To_controlplane_GroupList(a.(*GroupList), b.(*controlplane.GroupList), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*controlplane.GroupList)(nil), (*GroupList)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_controlplane_GroupList_To_v1beta2_GroupList(a.(*controlplane.GroupList), b.(*GroupList), scope)
+	if err := s.AddGeneratedConversionFunc((*controlplane.GroupAssociation)(nil), (*GroupAssociation)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_controlplane_GroupAssociation_To_v1beta2_GroupAssociation(a.(*controlplane.GroupAssociation), b.(*GroupAssociation), scope)
 	}); err != nil {
 		return err
 	}
@@ -133,6 +133,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*controlplane.GroupMember)(nil), (*GroupMember)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_controlplane_GroupMember_To_v1beta2_GroupMember(a.(*controlplane.GroupMember), b.(*GroupMember), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*GroupReference)(nil), (*controlplane.GroupReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_GroupReference_To_controlplane_GroupReference(a.(*GroupReference), b.(*controlplane.GroupReference), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*controlplane.GroupReference)(nil), (*GroupReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_controlplane_GroupReference_To_v1beta2_GroupReference(a.(*controlplane.GroupReference), b.(*GroupReference), scope)
 	}); err != nil {
 		return err
 	}
@@ -276,6 +286,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*ServiceReference)(nil), (*controlplane.ServiceReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_ServiceReference_To_controlplane_ServiceReference(a.(*ServiceReference), b.(*controlplane.ServiceReference), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*controlplane.ServiceReference)(nil), (*ServiceReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_controlplane_ServiceReference_To_v1beta2_ServiceReference(a.(*controlplane.ServiceReference), b.(*ServiceReference), scope)
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -415,6 +435,28 @@ func Convert_controlplane_AppliedToGroupPatch_To_v1beta2_AppliedToGroupPatch(in 
 	return autoConvert_controlplane_AppliedToGroupPatch_To_v1beta2_AppliedToGroupPatch(in, out, s)
 }
 
+func autoConvert_v1beta2_ClusterGroupMembers_To_controlplane_ClusterGroupMembers(in *ClusterGroupMembers, out *controlplane.ClusterGroupMembers, s conversion.Scope) error {
+	out.ObjectMeta = in.ObjectMeta
+	out.EffectiveMembers = *(*[]controlplane.GroupMember)(unsafe.Pointer(&in.EffectiveMembers))
+	return nil
+}
+
+// Convert_v1beta2_ClusterGroupMembers_To_controlplane_ClusterGroupMembers is an autogenerated conversion function.
+func Convert_v1beta2_ClusterGroupMembers_To_controlplane_ClusterGroupMembers(in *ClusterGroupMembers, out *controlplane.ClusterGroupMembers, s conversion.Scope) error {
+	return autoConvert_v1beta2_ClusterGroupMembers_To_controlplane_ClusterGroupMembers(in, out, s)
+}
+
+func autoConvert_controlplane_ClusterGroupMembers_To_v1beta2_ClusterGroupMembers(in *controlplane.ClusterGroupMembers, out *ClusterGroupMembers, s conversion.Scope) error {
+	out.ObjectMeta = in.ObjectMeta
+	out.EffectiveMembers = *(*[]GroupMember)(unsafe.Pointer(&in.EffectiveMembers))
+	return nil
+}
+
+// Convert_controlplane_ClusterGroupMembers_To_v1beta2_ClusterGroupMembers is an autogenerated conversion function.
+func Convert_controlplane_ClusterGroupMembers_To_v1beta2_ClusterGroupMembers(in *controlplane.ClusterGroupMembers, out *ClusterGroupMembers, s conversion.Scope) error {
+	return autoConvert_controlplane_ClusterGroupMembers_To_v1beta2_ClusterGroupMembers(in, out, s)
+}
+
 func autoConvert_v1beta2_ExternalEntityReference_To_controlplane_ExternalEntityReference(in *ExternalEntityReference, out *controlplane.ExternalEntityReference, s conversion.Scope) error {
 	out.Name = in.Name
 	out.Namespace = in.Namespace
@@ -437,48 +479,26 @@ func Convert_controlplane_ExternalEntityReference_To_v1beta2_ExternalEntityRefer
 	return autoConvert_controlplane_ExternalEntityReference_To_v1beta2_ExternalEntityReference(in, out, s)
 }
 
-func autoConvert_v1beta2_Group_To_controlplane_Group(in *Group, out *controlplane.Group, s conversion.Scope) error {
+func autoConvert_v1beta2_GroupAssociation_To_controlplane_GroupAssociation(in *GroupAssociation, out *controlplane.GroupAssociation, s conversion.Scope) error {
 	out.ObjectMeta = in.ObjectMeta
-	out.GroupMembers = *(*[]controlplane.GroupMember)(unsafe.Pointer(&in.GroupMembers))
+	out.AssociatedGroups = *(*[]controlplane.GroupReference)(unsafe.Pointer(&in.AssociatedGroups))
 	return nil
 }
 
-// Convert_v1beta2_Group_To_controlplane_Group is an autogenerated conversion function.
-func Convert_v1beta2_Group_To_controlplane_Group(in *Group, out *controlplane.Group, s conversion.Scope) error {
-	return autoConvert_v1beta2_Group_To_controlplane_Group(in, out, s)
+// Convert_v1beta2_GroupAssociation_To_controlplane_GroupAssociation is an autogenerated conversion function.
+func Convert_v1beta2_GroupAssociation_To_controlplane_GroupAssociation(in *GroupAssociation, out *controlplane.GroupAssociation, s conversion.Scope) error {
+	return autoConvert_v1beta2_GroupAssociation_To_controlplane_GroupAssociation(in, out, s)
 }
 
-func autoConvert_controlplane_Group_To_v1beta2_Group(in *controlplane.Group, out *Group, s conversion.Scope) error {
+func autoConvert_controlplane_GroupAssociation_To_v1beta2_GroupAssociation(in *controlplane.GroupAssociation, out *GroupAssociation, s conversion.Scope) error {
 	out.ObjectMeta = in.ObjectMeta
-	out.GroupMembers = *(*[]GroupMember)(unsafe.Pointer(&in.GroupMembers))
+	out.AssociatedGroups = *(*[]GroupReference)(unsafe.Pointer(&in.AssociatedGroups))
 	return nil
 }
 
-// Convert_controlplane_Group_To_v1beta2_Group is an autogenerated conversion function.
-func Convert_controlplane_Group_To_v1beta2_Group(in *controlplane.Group, out *Group, s conversion.Scope) error {
-	return autoConvert_controlplane_Group_To_v1beta2_Group(in, out, s)
-}
-
-func autoConvert_v1beta2_GroupList_To_controlplane_GroupList(in *GroupList, out *controlplane.GroupList, s conversion.Scope) error {
-	out.ListMeta = in.ListMeta
-	out.Items = *(*[]controlplane.Group)(unsafe.Pointer(&in.Items))
-	return nil
-}
-
-// Convert_v1beta2_GroupList_To_controlplane_GroupList is an autogenerated conversion function.
-func Convert_v1beta2_GroupList_To_controlplane_GroupList(in *GroupList, out *controlplane.GroupList, s conversion.Scope) error {
-	return autoConvert_v1beta2_GroupList_To_controlplane_GroupList(in, out, s)
-}
-
-func autoConvert_controlplane_GroupList_To_v1beta2_GroupList(in *controlplane.GroupList, out *GroupList, s conversion.Scope) error {
-	out.ListMeta = in.ListMeta
-	out.Items = *(*[]Group)(unsafe.Pointer(&in.Items))
-	return nil
-}
-
-// Convert_controlplane_GroupList_To_v1beta2_GroupList is an autogenerated conversion function.
-func Convert_controlplane_GroupList_To_v1beta2_GroupList(in *controlplane.GroupList, out *GroupList, s conversion.Scope) error {
-	return autoConvert_controlplane_GroupList_To_v1beta2_GroupList(in, out, s)
+// Convert_controlplane_GroupAssociation_To_v1beta2_GroupAssociation is an autogenerated conversion function.
+func Convert_controlplane_GroupAssociation_To_v1beta2_GroupAssociation(in *controlplane.GroupAssociation, out *GroupAssociation, s conversion.Scope) error {
+	return autoConvert_controlplane_GroupAssociation_To_v1beta2_GroupAssociation(in, out, s)
 }
 
 func autoConvert_v1beta2_GroupMember_To_controlplane_GroupMember(in *GroupMember, out *controlplane.GroupMember, s conversion.Scope) error {
@@ -505,6 +525,30 @@ func autoConvert_controlplane_GroupMember_To_v1beta2_GroupMember(in *controlplan
 // Convert_controlplane_GroupMember_To_v1beta2_GroupMember is an autogenerated conversion function.
 func Convert_controlplane_GroupMember_To_v1beta2_GroupMember(in *controlplane.GroupMember, out *GroupMember, s conversion.Scope) error {
 	return autoConvert_controlplane_GroupMember_To_v1beta2_GroupMember(in, out, s)
+}
+
+func autoConvert_v1beta2_GroupReference_To_controlplane_GroupReference(in *GroupReference, out *controlplane.GroupReference, s conversion.Scope) error {
+	out.Namespace = in.Namespace
+	out.Name = in.Name
+	out.UID = types.UID(in.UID)
+	return nil
+}
+
+// Convert_v1beta2_GroupReference_To_controlplane_GroupReference is an autogenerated conversion function.
+func Convert_v1beta2_GroupReference_To_controlplane_GroupReference(in *GroupReference, out *controlplane.GroupReference, s conversion.Scope) error {
+	return autoConvert_v1beta2_GroupReference_To_controlplane_GroupReference(in, out, s)
+}
+
+func autoConvert_controlplane_GroupReference_To_v1beta2_GroupReference(in *controlplane.GroupReference, out *GroupReference, s conversion.Scope) error {
+	out.Namespace = in.Namespace
+	out.Name = in.Name
+	out.UID = types.UID(in.UID)
+	return nil
+}
+
+// Convert_controlplane_GroupReference_To_v1beta2_GroupReference is an autogenerated conversion function.
+func Convert_controlplane_GroupReference_To_v1beta2_GroupReference(in *controlplane.GroupReference, out *GroupReference, s conversion.Scope) error {
+	return autoConvert_controlplane_GroupReference_To_v1beta2_GroupReference(in, out, s)
 }
 
 func autoConvert_v1beta2_IPBlock_To_controlplane_IPBlock(in *IPBlock, out *controlplane.IPBlock, s conversion.Scope) error {
@@ -861,4 +905,26 @@ func autoConvert_controlplane_Service_To_v1beta2_Service(in *controlplane.Servic
 // Convert_controlplane_Service_To_v1beta2_Service is an autogenerated conversion function.
 func Convert_controlplane_Service_To_v1beta2_Service(in *controlplane.Service, out *Service, s conversion.Scope) error {
 	return autoConvert_controlplane_Service_To_v1beta2_Service(in, out, s)
+}
+
+func autoConvert_v1beta2_ServiceReference_To_controlplane_ServiceReference(in *ServiceReference, out *controlplane.ServiceReference, s conversion.Scope) error {
+	out.Name = in.Name
+	out.Namespace = in.Namespace
+	return nil
+}
+
+// Convert_v1beta2_ServiceReference_To_controlplane_ServiceReference is an autogenerated conversion function.
+func Convert_v1beta2_ServiceReference_To_controlplane_ServiceReference(in *ServiceReference, out *controlplane.ServiceReference, s conversion.Scope) error {
+	return autoConvert_v1beta2_ServiceReference_To_controlplane_ServiceReference(in, out, s)
+}
+
+func autoConvert_controlplane_ServiceReference_To_v1beta2_ServiceReference(in *controlplane.ServiceReference, out *ServiceReference, s conversion.Scope) error {
+	out.Name = in.Name
+	out.Namespace = in.Namespace
+	return nil
+}
+
+// Convert_controlplane_ServiceReference_To_v1beta2_ServiceReference is an autogenerated conversion function.
+func Convert_controlplane_ServiceReference_To_v1beta2_ServiceReference(in *controlplane.ServiceReference, out *ServiceReference, s conversion.Scope) error {
+	return autoConvert_controlplane_ServiceReference_To_v1beta2_ServiceReference(in, out, s)
 }

@@ -137,7 +137,7 @@ func TestInitialize(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Logf("Running Initialize test with mode %s node config %s", tc.networkConfig.TrafficEncapMode, nodeConfig)
-		routeClient, err := route.NewClient(serviceCIDR, tc.networkConfig, tc.noSNAT)
+		routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, tc.networkConfig, tc.noSNAT, false)
 		assert.NoError(t, err)
 
 		var xtablesReleasedTime, initializedTime time.Time
@@ -166,9 +166,8 @@ func TestInitialize(t *testing.T) {
 		if tc.xtablesHoldDuration > 0 {
 			assert.True(t, initializedTime.After(xtablesReleasedTime), "Initialize shouldn't finish before xtables lock was released")
 		}
-
 		inited2 := make(chan struct{})
-		// Call initialize twice and verify no duplicates
+		t.Log("Calling Initialize twice and verify no duplicates")
 		err = routeClient.Initialize(nodeConfig, func() {
 			close(inited2)
 		})
@@ -200,7 +199,10 @@ func TestInitialize(t *testing.T) {
 -A ANTREA-FORWARD -o antrea-gw0 -m comment --comment "Antrea: accept packets to local pods" -j ACCEPT
 `,
 			"mangle": `:ANTREA-MANGLE - [0:0]
+:ANTREA-OUTPUT - [0:0]
 -A PREROUTING -m comment --comment "Antrea: jump to Antrea mangle rules" -j ANTREA-MANGLE
+-A OUTPUT -m comment --comment "Antrea: jump to Antrea output rules" -j ANTREA-OUTPUT
+-A ANTREA-OUTPUT -o antrea-gw0 -m comment --comment "Antrea: mark local output packets" -m addrtype --src-type LOCAL -j MARK --set-xmark 0x1/0x1
 `,
 			"nat": `:ANTREA-POSTROUTING - [0:0]
 -A POSTROUTING -m comment --comment "Antrea: jump to Antrea postrouting rules" -j ANTREA-POSTROUTING
@@ -234,6 +236,51 @@ func TestInitialize(t *testing.T) {
 	}
 }
 
+func TestIpTablesSync(t *testing.T) {
+	skipIfNotInContainer(t)
+	gwLink := createDummyGW(t)
+	defer netlink.LinkDel(gwLink)
+
+	routeClient, err := route.NewClient(nil, nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeEncap}, false, false)
+	assert.Nil(t, err)
+
+	inited := make(chan struct{})
+	err = routeClient.Initialize(nodeConfig, func() {
+		close(inited)
+	})
+	assert.NoError(t, err)
+	select {
+	case <-inited: // Node network initialized
+	}
+	tcs := []struct {
+		RuleSpec, Cmd, Table, Chain string
+	}{
+		{Table: "raw", Cmd: "-A", Chain: "OUTPUT", RuleSpec: "-m comment --comment \"Antrea: jump to Antrea output rules\" -j ANTREA-OUTPUT"},
+		{Table: "filter", Cmd: "-A", Chain: "ANTREA-FORWARD", RuleSpec: "-i antrea-gw0 -m comment --comment \"Antrea: accept packets from local pods\" -j ACCEPT"},
+	}
+	// we delete some rules, start the sync goroutine, wait for sync operation to restore them.
+	for _, tc := range tcs {
+		delCmd := fmt.Sprintf("iptables -t %s -D %s  %s", tc.Table, tc.Chain, tc.RuleSpec)
+		// #nosec G204: ignore in test code
+		actualData, err := exec.Command("bash", "-c", delCmd).Output()
+		assert.NoError(t, err, "error executing iptables cmd: %s", delCmd)
+		assert.Equal(t, "", string(actualData), "failed to remove iptables rule for %v", tc)
+	}
+	stopCh := make(chan struct{})
+	route.IPTablesSyncInterval = 2 * time.Second
+	go routeClient.Run(stopCh)
+	time.Sleep(route.IPTablesSyncInterval) // wait for one iteration of sync operation.
+	for _, tc := range tcs {
+		saveCmd := fmt.Sprintf("iptables-save -t %s | grep -e '%s %s'", tc.Table, tc.Cmd, tc.Chain)
+		// #nosec G204: ignore in test code
+		actualData, err := exec.Command("bash", "-c", saveCmd).Output()
+		assert.NoError(t, err, "error executing iptables-save cmd")
+		contains := fmt.Sprintf("%s %s %s", tc.Cmd, tc.Chain, tc.RuleSpec)
+		assert.Contains(t, string(actualData), contains, "%s command's output did not contain rule: %s", saveCmd, contains)
+	}
+	close(stopCh)
+}
+
 func TestAddAndDeleteRoutes(t *testing.T) {
 	skipIfNotInContainer(t)
 
@@ -257,7 +304,7 @@ func TestAddAndDeleteRoutes(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Logf("Running test with mode %s peer cidr %s peer ip %s node config %s", tc.mode, tc.peerCIDR, tc.peerIP, nodeConfig)
-		routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false)
+		routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false, false)
 		assert.NoError(t, err)
 		err = routeClient.Initialize(nodeConfig, func() {})
 		assert.NoError(t, err)
@@ -353,7 +400,7 @@ func TestReconcile(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Logf("Running test with mode %s added routes %v desired routes %v", tc.mode, tc.addedRoutes, tc.desiredPeerCIDRs)
-		routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false)
+		routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: tc.mode}, false, false)
 		assert.NoError(t, err)
 		err = routeClient.Initialize(nodeConfig, func() {})
 		assert.NoError(t, err)
@@ -391,9 +438,9 @@ func TestRouteTablePolicyOnly(t *testing.T) {
 	gwLink := createDummyGW(t)
 	defer netlink.LinkDel(gwLink)
 
-	routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeNetworkPolicyOnly}, false)
+	routeClient, err := route.NewClient(net.ParseIP("169.254.169.110"), nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeNetworkPolicyOnly}, false, false)
 	assert.NoError(t, err)
-	err = routeClient.Initialize(nodeConfig, func() {})
+	routeClient.Initialize(nodeConfig, func() {})
 	assert.NoError(t, err)
 	// Verify gw IP
 	gwName := nodeConfig.GatewayConfig.Name
@@ -450,7 +497,7 @@ func TestIPv6RoutesAndNeighbors(t *testing.T) {
 	gwLink := createDummyGW(t)
 	defer netlink.LinkDel(gwLink)
 
-	routeClient, err := route.NewClient(serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeEncap}, false)
+	routeClient, err := route.NewClient(nil, nil, serviceCIDR, &config.NetworkConfig{TrafficEncapMode: config.TrafficEncapModeEncap}, false, false)
 	assert.Nil(t, err)
 	_, ipv6Subnet, _ := net.ParseCIDR("fd74:ca9b:172:19::/64")
 	gwIPv6 := net.ParseIP("fd74:ca9b:172:19::1")

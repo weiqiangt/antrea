@@ -86,40 +86,34 @@ message AppliedToGroupPatch {
   repeated GroupMember removedGroupMembers = 3;
 }
 
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// ClusterGroupMembers is a list of GroupMember objects that are currently selected by a ClusterGroup.
+message ClusterGroupMembers {
+  optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
+
+  repeated GroupMember effectiveMembers = 2;
+}
+
 // ExternalEntityReference represents a ExternalEntity Reference.
 message ExternalEntityReference {
   // The name of this ExternalEntity.
   optional string name = 1;
 
-  // The namespace of this ExternalEntity.
+  // The Namespace of this ExternalEntity.
   optional string namespace = 2;
 }
 
-// +genclient
-// +genclient:nonNamespaced
-// +genclient:onlyVerbs=list,get,watch
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// Group is the message format of antrea/pkg/controller/types.Group in an API response.
-// An internal Group is created corresponding to a ClusterGroup resource, i.e. it is a
-// 1:1 mapping. The UID of this Group is the same as that of it's corresponding ClusterGroup.
-message Group {
+// GroupAssociation is the message format in an API response for groupassociation queries.
+message GroupAssociation {
   optional k8s.io.apimachinery.pkg.apis.meta.v1.ObjectMeta metadata = 1;
 
-  //  GroupMembers is a list of resources selected by this Group based on the selectors
-  // 	present in the corresponding ClusterGroup.
-  repeated GroupMember groupMembers = 2;
-}
-
-// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// GroupList is a list of Group objects.
-message GroupList {
-  optional k8s.io.apimachinery.pkg.apis.meta.v1.ListMeta metadata = 1;
-
-  repeated Group items = 2;
+  // AssociatedGroups is a list of GroupReferences that is associated with the
+  // Pod/ExternalEntity being queried.
+  repeated GroupReference associatedGroups = 2;
 }
 
 // GroupMember represents resource member to be populated in Groups.
-// This supersedes GroupMemberPod, and will eventually replace it.
 message GroupMember {
   // Pod maintains the reference to the Pod.
   optional PodReference pod = 1;
@@ -132,6 +126,17 @@ message GroupMember {
 
   // Ports is the list NamedPort of the GroupMember.
   repeated NamedPort ports = 4;
+}
+
+message GroupReference {
+  // Namespace of the Group. Empty for ClusterGroup.
+  optional string namespace = 1;
+
+  // Name of the Group.
+  optional string name = 2;
+
+  // UID of the Group.
+  optional string uid = 3;
 }
 
 // IPBlock describes a particular CIDR (Ex. "192.168.1.1/24"). The except entry describes CIDRs that should
@@ -301,10 +306,10 @@ message NodeStatsSummary {
 
 // PodReference represents a Pod Reference.
 message PodReference {
-  // The name of this pod.
+  // The name of this Pod.
   optional string name = 1;
 
-  // The namespace of this pod.
+  // The Namespace of this Pod.
   optional string namespace = 2;
 }
 
@@ -323,5 +328,14 @@ message Service {
   // It can only be specified when a numerical `port` is specified.
   // +optional
   optional int32 endPort = 3;
+}
+
+// ServiceReference represents reference to a v1.Service.
+message ServiceReference {
+  // The name of this Service.
+  optional string name = 1;
+
+  // The Namespace of this Service.
+  optional string namespace = 2;
 }
 
