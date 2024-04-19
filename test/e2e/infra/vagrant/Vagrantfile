@@ -32,7 +32,7 @@ else
   K8S_SERVICE_NETWORK_CIDR = K8S_SERVICE_NETWORK_V4_CIDR + "," + K8S_SERVICE_NETWORK_V6_CIDR
 end
 
-NODE_NETWORK_V4_PREFIX = "192.168.77."
+NODE_NETWORK_V4_PREFIX = "10.211.55."
 NODE_NETWORK_V6_PREFIX = "fd3b:fcf5:3e92:d732::"
 
 MEMORY = 2048
@@ -48,9 +48,9 @@ else
 end
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
-  config.vm.box = "ubuntu/jammy64"
+  config.vm.box = "bento/ubuntu-22.04"
 
-  config.vm.provider "virtualbox" do |v|
+  config.vm.provider "parallels" do |v|
     v.memory = MEMORY
     # 2 CPUS required to initialize K8s cluster with "kubeadm init"
     v.cpus = 2
@@ -63,7 +63,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   config.vm.define "k8s-node-control-plane" do |node|
     node.vm.hostname = "k8s-node-control-plane"
-    node_ipv4 = NODE_NETWORK_V4_PREFIX + "100"
+    node_ipv4 = NODE_NETWORK_V4_PREFIX + "17"
     node_ipv6 = NODE_NETWORK_V6_PREFIX + "100"
     # The network will be configured using the Ansible playbook
     # Despite setting auto_config to false, it seems that it is necessary to
@@ -102,7 +102,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   (1..NUM_WORKERS).each do |node_id|
     config.vm.define "k8s-node-worker-#{node_id}" do |node|
       node.vm.hostname = "k8s-node-worker-#{node_id}"
-      node_ipv4 = NODE_NETWORK_V4_PREFIX + "#{100 + node_id}"
+      node_ipv4 = NODE_NETWORK_V4_PREFIX + "#{18 + node_id}"
       node_ipv6 = NODE_NETWORK_V6_PREFIX + "#{100 + node_id}"
       node.vm.network "private_network", ip: node_ipv4, auto_config: false
       if MODE == "v4"

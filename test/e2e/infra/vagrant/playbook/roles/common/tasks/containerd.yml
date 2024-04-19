@@ -10,7 +10,7 @@
 
 - name: Add apt repository for stable version
   apt_repository:
-    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ release.stdout }} stable
+    repo: deb [arch=arm64] https://download.docker.com/linux/ubuntu {{ release.stdout }} stable
     state: present
 
 - name: Loading required kernel modules on boot
